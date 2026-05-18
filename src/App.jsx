@@ -300,10 +300,10 @@ function Login({onLogin}){
         <div style={{flex:1,background:`linear-gradient(160deg,${C.sageDark} 0%,${C.dark} 100%)`,padding:"56px 44px",display:"flex",flexDirection:"column",justifyContent:"center",minWidth:260}}>
           <div style={{fontSize:38,marginBottom:18}}>🏗️</div>
           <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:"#fff",lineHeight:1.2,marginBottom:12}}>BuildPro<br/><span style={{color:C.pistaLight}}>Manager</span></div>
-          <div style={{fontSize:14,color:C.pistaLight+"aa",lineHeight:1.7,marginBottom:32}}>Construction Management ERP — Sites, clients, contractors & finances.</div>
+          <div style={{fontSize:14,color:"rgba(255, 255, 255, 0.85)",lineHeight:1.7,marginBottom:32,fontWeight:400}}>Construction Management ERP — Sites, clients, contractors & finances.</div>
           {[["🏗️","Multi-site management"],["💰","Real-time financials"],["📊","Advanced analytics"],["👥","Client management"]].map(([ic,t])=>(
             <div key={t} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-              <span style={{fontSize:15}}>{ic}</span><span style={{fontSize:13,color:"#ffffffaa"}}>{t}</span>
+              <span style={{fontSize:15}}>{ic}</span><span style={{fontSize:13,color:"rgba(255, 255, 255, 0.88)"}}>{t}</span>
             </div>
           ))}
         </div>
@@ -1349,7 +1349,8 @@ function Reports({sites}){
 }
 
 // ─── SETTINGS ─────────────────────────────────────────────────
-function Settings({user}){
+function Settings({user, onUpdateUser}){
+  const [name, setName] = useState(user.name);
   return(
     <div>
       <Hdr title="Settings" sub="Account & preferences"/>
@@ -1357,11 +1358,18 @@ function Settings({user}){
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Profile</div>
           <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20,padding:14,background:C.pistaPale,borderRadius:12}}>
-            <div style={{width:50,height:50,borderRadius:"50%",background:C.sageDark,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:20,fontWeight:800}}>{user.name[0]}</div>
-            <div><div style={{fontWeight:700,fontSize:15,color:C.dark}}>{user.name}</div><div style={{marginTop:4}}><Bdg s={user.role}/></div></div>
+            <div style={{width:50,height:50,borderRadius:"50%",background:C.sageDark,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--btnPrimaryText)",fontSize:20,fontWeight:800}}>{name[0]?.toUpperCase() || ""}</div>
+            <div><div style={{fontWeight:700,fontSize:15,color:C.dark}}>{name}</div><div style={{marginTop:4}}><Bdg s={user.role}/></div></div>
           </div>
-          <Fld label="Display Name" value={user.name} onChange={()=>{}}/>
-          <Btn>Save Changes</Btn>
+          <Fld label="Display Name" value={name} onChange={e=>setName(e.target.value)}/>
+          <Btn onClick={() => {
+            if (!name.trim()) {
+              alert("Error: Display Name cannot be empty!");
+              return;
+            }
+            onUpdateUser({ ...user, name: name.trim() });
+            alert("Success: Display name updated successfully to " + name.trim() + "!");
+          }}>Save Changes</Btn>
         </Card>
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>System</div>
@@ -1744,7 +1752,7 @@ export default function App(){
           {nav==="vouchers"&&<Vouchers sites={sites}/>}
           {nav==="clients"&&<Clients clients={clients}/>}
           {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites}/>}
-          {nav==="settings"&&<Settings user={user}/>}
+          {nav==="settings"&&<Settings user={user} onUpdateUser={setUser}/>}
         </div>
       </div>
     </div>
