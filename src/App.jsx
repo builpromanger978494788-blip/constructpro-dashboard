@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { db } from "./firebase";
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 
 const C = {
   pista:"#7cb98a",pistaLight:"#a8d4b0",pistaPale:"#e8f5ec",
@@ -281,38 +283,42 @@ function Home({sites,user,setNav}){
 }
 
 // ─── PAYMENT TAB ──────────────────────────────────────────────
-function PayTab({site,setSites}){
+function PayTab({site}){
   const[showAdd,setShowAdd]=useState(false);
   const[editId,setEditId]=useState(null);
   const[form,setForm]=useState({amount:"",type:"Cash",date:""});
   const p=site.payment,rem=p.totalDeal-p.paid,extra=rem<0?Math.abs(rem):0;
 
   function openEdit(m){setEditId(m.id);setForm({amount:m.amount,type:m.type,date:m.date});}
-  function saveEdit(){
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>{
-      if(s.id!==site.id)return s;
-      const newMethods=s.payment.methods.map(m=>m.id===editId?{...m,amount:Number(form.amount),type:form.type,date:form.date}:m);
-      const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
-      return{...s,payment:{...s.payment,paid:newPaid,methods:newMethods}};
-    })}));
+  async function saveEdit(){
+    const newMethods=site.payment.methods.map(m=>m.id===editId?{...m,amount:Number(form.amount),type:form.type,date:form.date}:m);
+    const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "payment.methods": newMethods,
+      "payment.paid": newPaid
+    });
     setEditId(null);
   }
-  function addPayment(){
+  async function addPayment(){
     if(!form.amount)return;
     const amt=Number(form.amount);
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>{
-      if(s.id!==site.id)return s;
-      const newMethods=[...s.payment.methods,{id:Date.now(),type:form.type,amount:amt,date:form.date||new Date().toLocaleDateString("en-IN")}];
-      return{...s,payment:{...s.payment,paid:s.payment.paid+amt,methods:newMethods}};
-    })}));
+    const newMethods=[...site.payment.methods,{id:Date.now(),type:form.type,amount:amt,date:form.date||new Date().toLocaleDateString("en-IN")}];
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "payment.methods": newMethods,
+      "payment.paid": site.payment.paid+amt
+    });
     setForm({amount:"",type:"Cash",date:""});setShowAdd(false);
   }
-  function delPayment(id){
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>{
-      if(s.id!==site.id)return s;
-      const newMethods=s.payment.methods.filter(m=>m.id!==id);
-      return{...s,payment:{...s.payment,paid:newMethods.reduce((a,m)=>a+m.amount,0),methods:newMethods}};
-    })}));
+  async function delPayment(id){
+    const newMethods=site.payment.methods.filter(m=>m.id!==id);
+    const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "payment.methods": newMethods,
+      "payment.paid": newPaid
+    });
   }
 
   return(
@@ -354,23 +360,29 @@ function PayTab({site,setSites}){
 }
 
 // ─── MATERIAL TAB ─────────────────────────────────────────────
-function MatTab({site,setSites}){
+function MatTab({site}){
   const[showAdd,setShowAdd]=useState(false);
   const[editRow,setEditRow]=useState(null);
   const blank={material:"",vendor:"",contractor:"",qty:"",rate:"",advance:"",status:"Partial",date:""};
   const[form,setForm]=useState(blank);
 
-  function calcAndSave(isEdit){
+  async function calcAndSave(isEdit){
     const total=Number(form.qty)*Number(form.rate),remaining=total-Number(form.advance);
     const entry={...form,qty:Number(form.qty),rate:Number(form.rate),total,advance:Number(form.advance),remaining};
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>{
-      if(s.id!==site.id)return s;
-      const mat=isEdit?s.expenses.material.map(m=>m.id===editRow?{...entry,id:editRow}:m):[...s.expenses.material,{...entry,id:Date.now()}];
-      return{...s,expenses:{...s.expenses,material:mat}};
-    })}));
+    const newMaterial=isEdit?site.expenses.material.map(m=>m.id===editRow?{...entry,id:editRow}:m):[...site.expenses.material,{...entry,id:Date.now()}];
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "expenses.material": newMaterial
+    });
     setForm(blank);isEdit?setEditRow(null):setShowAdd(false);
   }
-  function del(id){setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>s.id!==site.id?s:{...s,expenses:{...s.expenses,material:s.expenses.material.filter(m=>m.id!==id)}})}))}
+  async function del(id){
+    const newMaterial=site.expenses.material.filter(m=>m.id!==id);
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "expenses.material": newMaterial
+    });
+  }
 
   return(
     <div>
@@ -410,23 +422,29 @@ function MatTab({site,setSites}){
 }
 
 // ─── LABOUR TAB ───────────────────────────────────────────────
-function LabTab({site,setSites}){
+function LabTab({site}){
   const[showAdd,setShowAdd]=useState(false);
   const[editRow,setEditRow]=useState(null);
   const blank={contractor:"",work:"",total:"",advance:"",status:"Unpaid",workers:""};
   const[form,setForm]=useState(blank);
 
-  function save(isEdit){
+  async function save(isEdit){
     const remaining=Number(form.total)-Number(form.advance);
     const entry={...form,total:Number(form.total),advance:Number(form.advance),remaining,workers:Number(form.workers)};
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>{
-      if(s.id!==site.id)return s;
-      const lab=isEdit?s.expenses.labour.map(l=>l.id===editRow?{...entry,id:editRow}:l):[...s.expenses.labour,{...entry,id:Date.now()}];
-      return{...s,expenses:{...s.expenses,labour:lab}};
-    })}));
+    const newLabour=isEdit?site.expenses.labour.map(l=>l.id===editRow?{...entry,id:editRow}:l):[...site.expenses.labour,{...entry,id:Date.now()}];
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "expenses.labour": newLabour
+    });
     setForm(blank);isEdit?setEditRow(null):setShowAdd(false);
   }
-  function del(id){setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>s.id!==site.id?s:{...s,expenses:{...s.expenses,labour:s.expenses.labour.filter(l=>l.id!==id)}})}))}
+  async function del(id){
+    const newLabour=site.expenses.labour.filter(l=>l.id!==id);
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "expenses.labour": newLabour
+    });
+  }
 
   return(
     <div>
@@ -465,7 +483,7 @@ function LabTab({site,setSites}){
 }
 
 // ─── BILLS TAB ────────────────────────────────────────────────
-function BillsTab({site,setSites}){
+function BillsTab({site}){
   const[showAdd,setShowAdd]=useState(false);
   const[editRow,setEditRow]=useState(null);
   const blank={type:"Material",date:"",contractor:"",material:"",qty:"",rate:""};
@@ -473,18 +491,24 @@ function BillsTab({site,setSites}){
   const bills=site.expenses.bills;
   const total=bills.reduce((a,b)=>a+b.total,0);
 
-  function save(isEdit){
+  async function save(isEdit){
     const t=Number(form.qty)*Number(form.rate);
     const n=bills.length;
     const entry={...form,qty:Number(form.qty),rate:Number(form.rate),total:t,billNo:`B-${String(n+1).padStart(4,"0")}`};
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>{
-      if(s.id!==site.id)return s;
-      const b=isEdit?s.expenses.bills.map(bl=>bl.id===editRow?{...entry,id:editRow}:bl):[...s.expenses.bills,{...entry,id:Date.now()}];
-      return{...s,expenses:{...s.expenses,bills:b}};
-    })}));
+    const newBills=isEdit?site.expenses.bills.map(bl=>bl.id===editRow?{...entry,id:editRow}:bl):[...site.expenses.bills,{...entry,id:Date.now()}];
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "expenses.bills": newBills
+    });
     setForm(blank);isEdit?setEditRow(null):setShowAdd(false);
   }
-  function del(id){setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>s.id!==site.id?s:{...s,expenses:{...s.expenses,bills:s.expenses.bills.filter(b=>b.id!==id)}})}))}
+  async function del(id){
+    const newBills=site.expenses.bills.filter(b=>b.id!==id);
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      "expenses.bills": newBills
+    });
+  }
 
   return(
     <div>
@@ -519,14 +543,24 @@ function BillsTab({site,setSites}){
 }
 
 // ─── SITE DETAIL ──────────────────────────────────────────────
-function SiteDetail({site,setSites,onBack,onComplete}){
+function SiteDetail({site,onBack,onComplete}){
   const[main,setMain]=useState("payment");
   const[exp,setExp]=useState("material");
   const[editSite,setEditSite]=useState(false);
   const[siteForm,setSiteForm]=useState({name:site.name,client:site.client,contact:site.contact,address:site.address,startDate:site.startDate,estCompletion:site.estCompletion,progress:site.progress,totalDeal:site.payment.totalDeal});
 
-  function saveSiteEdit(){
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(s=>s.id!==site.id?s:{...s,name:siteForm.name,client:siteForm.client,contact:siteForm.contact,address:siteForm.address,startDate:siteForm.startDate,estCompletion:siteForm.estCompletion,progress:Number(siteForm.progress),payment:{...s.payment,totalDeal:Number(siteForm.totalDeal)}})}));
+  async function saveSiteEdit(){
+    const siteRef = doc(db, "sites", site.id.toString());
+    await updateDoc(siteRef, {
+      name: siteForm.name,
+      client: siteForm.client,
+      contact: siteForm.contact,
+      address: siteForm.address,
+      startDate: siteForm.startDate,
+      estCompletion: siteForm.estCompletion,
+      progress: Number(siteForm.progress),
+      "payment.totalDeal": Number(siteForm.totalDeal)
+    });
     setEditSite(false);
   }
 
@@ -558,12 +592,12 @@ function SiteDetail({site,setSites,onBack,onComplete}){
       </Card>
 
       <Tabs tabs={[["payment","💰 Payment"],["expenses","📋 Expenses"]]} active={main} onChange={setMain}/>
-      {main==="payment"&&<PayTab site={site} setSites={setSites}/>}
+      {main==="payment"&&<PayTab site={site}/>}
       {main==="expenses"&&<div>
         <Tabs tabs={[["material","🧱 Material"],["labour","👷 Labour"],["bills","🧾 Bills"]]} active={exp} onChange={setExp}/>
-        {exp==="material"&&<MatTab site={site} setSites={setSites}/>}
-        {exp==="labour"&&<LabTab site={site} setSites={setSites}/>}
-        {exp==="bills"&&<BillsTab site={site} setSites={setSites}/>}
+        {exp==="material"&&<MatTab site={site}/>}
+        {exp==="labour"&&<LabTab site={site}/>}
+        {exp==="bills"&&<BillsTab site={site}/>}
       </div>}
 
       {editSite&&<Modal title="Edit Site Details" onClose={()=>setEditSite(false)} w={540}>
@@ -584,7 +618,7 @@ function SiteDetail({site,setSites,onBack,onComplete}){
 }
 
 // ─── SITES MODULE ─────────────────────────────────────────────
-function Sites({sites,setSites}){
+function Sites({sites}){
   const[tab,setTab]=useState("ongoing");
   const[sel,setSel]=useState(null);
   const[showAdd,setShowAdd]=useState(false);
@@ -592,26 +626,50 @@ function Sites({sites,setSites}){
   const blank={name:"",client:"",contact:"",address:"",startDate:"",estCompletion:"",totalDeal:""};
   const[form,setForm]=useState(blank);
 
-  function addSite(){
+  async function addSite(){
     if(!form.name||!form.client||!form.totalDeal)return;
-    setSites(prev=>({...prev,ongoing:[...prev.ongoing,{id:Date.now(),...form,progress:0,contractorCount:0,materialCost:0,payment:{totalDeal:Number(form.totalDeal),paid:0,methods:[]},expenses:{material:[],labour:[],bills:[]}}]}));
+    const id = Date.now();
+    await setDoc(doc(db, "sites", id.toString()), {
+      id,
+      ...form,
+      status: "ongoing",
+      progress: 0,
+      contractorCount: 0,
+      materialCost: 0,
+      payment: { totalDeal: Number(form.totalDeal), paid: 0, methods: [] },
+      expenses: { material: [], labour: [], bills: [] }
+    });
     setForm(blank);setShowAdd(false);
   }
 
-  function completeSite(id){
+  async function completeSite(id){
     const s=sites.ongoing.find(x=>x.id===id);
     if(!s)return;
-    const completedEntry={id:s.id,name:s.name,client:s.client,contact:s.contact,address:s.address,totalCost:s.payment.totalDeal,contractors:s.expenses.labour.map(l=>l.contractor).filter((v,i,a)=>a.indexOf(v)===i),timeline:`${s.startDate} – Today`,startDate:s.startDate,endDate:new Date().toLocaleDateString("en-IN")};
-    setSites(prev=>({ongoing:prev.ongoing.filter(x=>x.id!==id),completed:[...prev.completed,completedEntry]}));
+    const completedEntry={
+      id:s.id,
+      name:s.name,
+      client:s.client,
+      contact:s.contact,
+      address:s.address,
+      totalCost:s.payment.totalDeal,
+      contractors:s.expenses.labour.map(l=>l.contractor).filter((v,i,a)=>a.indexOf(v)===i),
+      timeline:`${s.startDate} – Today`,
+      startDate:s.startDate,
+      endDate:new Date().toLocaleDateString("en-IN"),
+      status: "completed"
+    };
+    await setDoc(doc(db, "sites", id.toString()), completedEntry);
     setSel(null);setTab("completed");
   }
 
-  function delCompleted(id){setSites(prev=>({...prev,completed:prev.completed.filter(s=>s.id!==id)}));}
+  async function delCompleted(id){
+    await deleteDoc(doc(db, "sites", id.toString()));
+  }
 
   if(sel){
     const live=sites.ongoing.find(s=>s.id===sel.id);
     if(!live){setSel(null);return null;}
-    return<SiteDetail site={live} setSites={setSites} onBack={()=>setSel(null)} onComplete={completeSite}/>;
+    return<SiteDetail site={live} onBack={()=>setSel(null)} onComplete={completeSite}/>;
   }
 
   return(
@@ -648,7 +706,7 @@ function Sites({sites,setSites}){
                   <label style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:C.pistaPale,borderRadius:8,cursor:"pointer",border:`1.5px solid ${C.pistaLight}`,fontSize:12,fontWeight:600,color:C.sageDark}}>
                     <input type="checkbox" onChange={e=>{if(e.target.checked)completeSite(s.id);}} style={{accentColor:C.sageDark}}/> Complete
                   </label>
-                  <Btn small v="danger" onClick={()=>setSites(prev=>({...prev,ongoing:prev.ongoing.filter(x=>x.id!==s.id)}))}>🗑️</Btn>
+                  <Btn small v="danger" onClick={async ()=>await deleteDoc(doc(db, "sites", s.id.toString()))}>🗑️</Btn>
                 </div>
               </Card>
             );
@@ -693,7 +751,7 @@ function Sites({sites,setSites}){
         <Fld label="Total Cost (₹)" type="number" value={editCompleted.totalCost} onChange={e=>setEditCompleted({...editCompleted,totalCost:Number(e.target.value)})}/>
         <Fld label="Timeline" value={editCompleted.timeline} onChange={e=>setEditCompleted({...editCompleted,timeline:e.target.value})}/>
         <div style={{display:"flex",gap:10}}>
-          <Btn onClick={()=>{setSites(prev=>({...prev,completed:prev.completed.map(s=>s.id===editCompleted.id?editCompleted:s)}));setEditCompleted(null);}}>Update</Btn>
+          <Btn onClick={async ()=>{await setDoc(doc(db, "sites", editCompleted.id.toString()), { ...editCompleted, status: "completed" });setEditCompleted(null);}}>Update</Btn>
           <Btn v="ghost" onClick={()=>setEditCompleted(null)}>Cancel</Btn>
         </div>
       </Modal>}
@@ -702,7 +760,7 @@ function Sites({sites,setSites}){
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────
-function Transactions({sites,setSites}){
+function Transactions({sites}){
   const[tab,setTab]=useState("clients");
   const[showAdd,setShowAdd]=useState(false);
   const[editTxn,setEditTxn]=useState(null);
@@ -710,15 +768,16 @@ function Transactions({sites,setSites}){
 
   const siteOpts=sites.ongoing.map(s=>s.name);
 
-  function addClientPayment(){
+  async function addClientPayment(){
     const s=sites.ongoing.find(x=>x.name===txnForm.siteId);
     if(!s||!txnForm.amount)return;
     const amt=Number(txnForm.amount);
-    setSites(prev=>({...prev,ongoing:prev.ongoing.map(si=>{
-      if(si.id!==s.id)return si;
-      const newM=[...si.payment.methods,{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
-      return{...si,payment:{...si.payment,paid:si.payment.paid+amt,methods:newM}};
-    })}));
+    const newM=[...s.payment.methods,{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
+    const siteRef = doc(db, "sites", s.id.toString());
+    await updateDoc(siteRef, {
+      "payment.methods": newM,
+      "payment.paid": s.payment.paid+amt
+    });
     setTxnForm({siteId:"",amount:"",type:"Cash",date:""});setShowAdd(false);
   }
 
@@ -747,14 +806,15 @@ function Transactions({sites,setSites}){
               <span style={{color:C.green,fontWeight:700}}>{fmt(l.advance)}</span>,
               <span style={{color:C.red,fontWeight:700}}>{fmt(l.remaining)}</span>,
               <Bdg s={l.status}/>,
-              <Btn small v="secondary" onClick={()=>{
+              <Btn small v="secondary" onClick={async ()=>{
                 const newAdv=prompt("Enter advance amount to add:");
                 if(!newAdv)return;
                 const amt=Number(newAdv);
-                setSites(prev=>({...prev,ongoing:prev.ongoing.map(si=>{
-                  if(si.id!==s.id)return si;
-                  return{...si,expenses:{...si.expenses,labour:si.expenses.labour.map(lb=>lb.id===l.id?{...lb,advance:lb.advance+amt,remaining:Math.max(0,lb.remaining-amt),status:lb.remaining-amt<=0?"Paid":"Partial"}:lb)}};
-                })}));
+                const newLabour=s.expenses.labour.map(lb=>lb.id===l.id?{...lb,advance:lb.advance+amt,remaining:Math.max(0,lb.remaining-amt),status:lb.remaining-amt<=0?"Paid":"Partial"}:lb);
+                const siteRef = doc(db, "sites", s.id.toString());
+                await updateDoc(siteRef, {
+                  "expenses.labour": newLabour
+                });
               }}>+ Pay</Btn>
             ]))}/>
         </Card>
@@ -774,15 +834,16 @@ function Transactions({sites,setSites}){
         <Fld label="Method" as="select" value={txnForm.type} onChange={e=>setTxnForm({...txnForm,type:e.target.value})} options={["Cash","UPI","Cheque","Bank Transfer","NEFT"]}/>
         <Fld label="Date" type="date" value={txnForm.date} onChange={e=>setTxnForm({...txnForm,date:e.target.value})}/>
         <div style={{display:"flex",gap:10}}>
-          <Btn onClick={()=>{
+          <Btn onClick={async ()=>{
             const s=sites.ongoing.find(x=>x.id===editTxn);
             if(!s||!txnForm.amount)return;
             const amt=Number(txnForm.amount);
-            setSites(prev=>({...prev,ongoing:prev.ongoing.map(si=>{
-              if(si.id!==s.id)return si;
-              const newM=[...si.payment.methods,{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
-              return{...si,payment:{...si.payment,paid:si.payment.paid+amt,methods:newM}};
-            })}));
+            const newM=[...s.payment.methods,{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
+            const siteRef = doc(db, "sites", s.id.toString());
+            await updateDoc(siteRef, {
+              "payment.methods": newM,
+              "payment.paid": s.payment.paid+amt
+            });
             setEditTxn(null);
           }}>Save</Btn>
           <Btn v="ghost" onClick={()=>setEditTxn(null)}>Cancel</Btn>
@@ -819,7 +880,7 @@ function Vouchers({sites}){
 }
 
 // ─── CLIENTS ──────────────────────────────────────────────────
-function Clients({clients,setClients}){
+function Clients({clients}){
   const[search,setSearch]=useState("");
   const[filter,setFilter]=useState("All");
   const[showAdd,setShowAdd]=useState(false);
@@ -828,10 +889,16 @@ function Clients({clients,setClients}){
   const[form,setForm]=useState(blank);
   const list=clients.filter(c=>(filter==="All"||c.status===filter)&&c.name.toLowerCase().includes(search.toLowerCase()));
 
-  function save(isEdit){
+  async function save(isEdit){
     if(!form.name)return;
-    if(isEdit){setClients(prev=>prev.map(c=>c.id===editC?{...c,...form,totalValue:Number(form.totalValue)}:c));setEditC(null);}
-    else{setClients(prev=>[...prev,{...form,id:Date.now(),totalValue:Number(form.totalValue)}]);setShowAdd(false);}
+    if(isEdit){
+      await setDoc(doc(db, "clients", editC.toString()), { ...form, id: editC, totalValue: Number(form.totalValue) });
+      setEditC(null);
+    } else {
+      const id = Date.now();
+      await setDoc(doc(db, "clients", id.toString()), { ...form, id, totalValue: Number(form.totalValue) });
+      setShowAdd(false);
+    }
     setForm(blank);
   }
 
@@ -864,7 +931,7 @@ function Clients({clients,setClients}){
             ))}
             <div style={{marginTop:12,display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn small v="secondary" onClick={()=>{setEditC(c.id);setForm({name:c.name,mobile:c.mobile,status:c.status,totalValue:c.totalValue,contractor:c.contractor,startDate:c.startDate,endDate:c.endDate,site:c.site});}}>✏️ Edit</Btn>
-              <Btn small v="danger" onClick={()=>setClients(prev=>prev.filter(x=>x.id!==c.id))}>🗑️</Btn>
+              <Btn small v="danger" onClick={async ()=>await deleteDoc(doc(db, "clients", c.id.toString()))}>🗑️</Btn>
             </div>
           </Card>
         ))}
@@ -981,9 +1048,54 @@ function Settings({user}){
 export default function App(){
   const[user,setUser]=useState(null);
   const[nav,setNav]=useState("home");
-  const[sites,setSites]=useState(INIT_SITES);
-  const[clients,setClients]=useState(INIT_CLIENTS);
+  const[sites,setSites]=useState({ ongoing: [], completed: [] });
+  const[clients,setClients]=useState([]);
   const[collapsed,setCollapsed]=useState(false);
+
+  useEffect(() => {
+    const unsubSites = onSnapshot(collection(db, "sites"), (snapshot) => {
+      if (snapshot.empty) {
+        // Seed
+        INIT_SITES.ongoing.forEach(s => {
+          setDoc(doc(db, "sites", s.id.toString()), { ...s, status: "ongoing" });
+        });
+        INIT_SITES.completed.forEach(s => {
+          setDoc(doc(db, "sites", s.id.toString()), { ...s, status: "completed" });
+        });
+      } else {
+        const ongoing = [];
+        const completed = [];
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          if (data.status === "completed") {
+            completed.push(data);
+          } else {
+            ongoing.push(data);
+          }
+        });
+        setSites({ ongoing, completed });
+      }
+    });
+
+    const unsubClients = onSnapshot(collection(db, "clients"), (snapshot) => {
+      if (snapshot.empty) {
+        INIT_CLIENTS.forEach(c => {
+          setDoc(doc(db, "clients", c.id.toString()), c);
+        });
+      } else {
+        const list = [];
+        snapshot.forEach(doc => {
+          list.push(doc.data());
+        });
+        setClients(list);
+      }
+    });
+
+    return () => {
+      unsubSites();
+      unsubClients();
+    };
+  }, []);
 
   const navItems=[
     {id:"home",icon:"🏠",label:"Dashboard"},
@@ -1052,10 +1164,10 @@ export default function App(){
         </div>
         <div style={{flex:1,overflowY:"auto",padding:24}}>
           {nav==="home"&&<Home sites={sites} user={user} setNav={setNav}/>}
-          {nav==="sites"&&<Sites sites={sites} setSites={setSites}/>}
-          {nav==="transactions"&&<Transactions sites={sites} setSites={setSites}/>}
+          {nav==="sites"&&<Sites sites={sites}/>}
+          {nav==="transactions"&&<Transactions sites={sites}/>}
           {nav==="vouchers"&&<Vouchers sites={sites}/>}
-          {nav==="clients"&&<Clients clients={clients} setClients={setClients}/>}
+          {nav==="clients"&&<Clients clients={clients}/>}
           {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites}/>}
           {nav==="settings"&&<Settings user={user}/>}
         </div>
