@@ -1190,7 +1190,26 @@ function Settings({user}){
 // ─── ROOT APP ─────────────────────────────────────────────────
 export default function App(){
   const[user,setUser]=useState(null);
-  const[nav,setNav]=useState("home");
+  const[nav, _setNav]=useState("home");
+  const[navHistory, setNavHistory]=useState([]);
+  
+  const setNav = (newNav) => {
+    if (newNav === nav) return;
+    setNavHistory(prev => [...prev.slice(-20), nav]);
+    _setNav(newNav);
+  };
+
+  const handleBack = () => {
+    if (navHistory.length === 0) {
+      _setNav("home");
+      return;
+    }
+    const prev = [...navHistory];
+    const prevPage = prev.pop();
+    setNavHistory(prev);
+    _setNav(prevPage);
+  };
+
   const[sites,setSites]=useState({ ongoing: [], completed: [] });
   const[clients,setClients]=useState([]);
   const[collapsed,setCollapsed]=useState(false);
@@ -1316,6 +1335,31 @@ export default function App(){
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
         <div style={{background:"#fff",borderBottom:`1px solid ${C.g100}`,padding:"0 24px",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {nav !== "home" && (
+              <button 
+                onClick={handleBack} 
+                style={{
+                  background: C.g100,
+                  border: "none",
+                  borderRadius: "50%",
+                  width: 30,
+                  height: 30,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  color: C.sageDark,
+                  transition: "all 0.15s ease",
+                  marginRight: 6
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = C.pistaPale; e.currentTarget.style.transform = "translateX(-2px)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = C.g100; e.currentTarget.style.transform = "translateX(0)"; }}
+                title="Back"
+              >
+                ⬅️
+              </button>
+            )}
             <span style={{fontSize:17}}>{navItems.find(n=>n.id===nav)?.icon}</span>
             <span style={{fontWeight:700,fontSize:15,color:C.dark}}>{navItems.find(n=>n.id===nav)?.label}</span>
           </div>
