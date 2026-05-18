@@ -66,6 +66,134 @@ const CHART=[
 ];
 const PIE=[{name:"Material",value:45,color:C.pista},{name:"Labour",value:35,color:C.blueDeep},{name:"Overhead",value:20,color:C.gold}];
 
+function computeRealChartData(sites) {
+  const targetMonths = [
+    { key: "08", name: "Aug", revenue: 0, expense: 0 },
+    { key: "09", name: "Sep", revenue: 0, expense: 0 },
+    { key: "10", name: "Oct", revenue: 0, expense: 0 },
+    { key: "11", name: "Nov", revenue: 0, expense: 0 },
+    { key: "12", name: "Dec", revenue: 0, expense: 0 },
+    { key: "01", name: "Jan", revenue: 0, expense: 0 },
+    { key: "02", name: "Feb", revenue: 0, expense: 0 },
+    { key: "03", name: "Mar", revenue: 0, expense: 0 }
+  ];
+
+  const getMonthKey = (dateStr) => {
+    if (!dateStr) return null;
+    const str = dateStr.toLowerCase();
+    if (str.includes("jan")) return "01";
+    if (str.includes("feb")) return "02";
+    if (str.includes("mar")) return "03";
+    if (str.includes("apr")) return "04";
+    if (str.includes("may")) return "05";
+    if (str.includes("jun")) return "06";
+    if (str.includes("jul")) return "07";
+    if (str.includes("aug")) return "08";
+    if (str.includes("sep")) return "09";
+    if (str.includes("oct")) return "10";
+    if (str.includes("nov")) return "11";
+    if (str.includes("dec")) return "12";
+    
+    const parts = dateStr.split(/[-/]/);
+    if (parts.length >= 2) {
+      const m = parts[1].trim();
+      if (m.length === 2) return m;
+      if (m.length === 1) return "0" + m;
+    }
+    return null;
+  };
+
+  sites.ongoing.forEach(s => {
+    if (s.payment && s.payment.methods) {
+      s.payment.methods.forEach(m => {
+        const mKey = getMonthKey(m.date);
+        const match = targetMonths.find(t => t.key === mKey);
+        if (match) match.revenue += Number(m.amount) || 0;
+      });
+    }
+    if (s.expenses && s.expenses.material) {
+      s.expenses.material.forEach(mat => {
+        const mKey = getMonthKey(mat.date);
+        const match = targetMonths.find(t => t.key === mKey);
+        if (match) match.expense += Number(mat.advance) || 0;
+      });
+    }
+    if (s.expenses && s.expenses.labour) {
+      s.expenses.labour.forEach(lab => {
+        const mKey = getMonthKey(lab.date || s.startDate);
+        const match = targetMonths.find(t => t.key === mKey);
+        if (match) match.expense += Number(lab.advance) || 0;
+      });
+    }
+    if (s.expenses && s.expenses.bills) {
+      s.expenses.bills.forEach(bill => {
+        const mKey = getMonthKey(bill.date);
+        const match = targetMonths.find(t => t.key === mKey);
+        if (match) match.expense += Number(bill.total) || 0;
+      });
+    }
+  });
+
+  sites.completed.forEach(s => {
+    const mKey = getMonthKey(s.endDate || s.timeline);
+    const match = targetMonths.find(t => t.key === mKey);
+    if (match) match.revenue += Number(s.totalCost) || 0;
+  });
+
+  return targetMonths.map(t => ({
+    month: t.name,
+    revenue: t.revenue,
+    expense: t.expense
+  }));
+}
+
+function computeRealPieData(sites) {
+  let material = 0;
+  let labour = 0;
+  let overhead = 0;
+  
+  sites.ongoing.forEach(s => {
+    if (s.expenses) {
+      if (s.expenses.material) {
+        s.expenses.material.forEach(m => {
+          material += Number(m.advance) || 0;
+        });
+      }
+      if (s.expenses.labour) {
+        s.expenses.labour.forEach(l => {
+          labour += Number(l.advance) || 0;
+        });
+      }
+      if (s.expenses.bills) {
+        s.expenses.bills.forEach(b => {
+          if (b.type === "Material") {
+            material += Number(b.total) || 0;
+          } else if (b.type === "Labour") {
+            labour += Number(b.total) || 0;
+          } else {
+            overhead += Number(b.total) || 0;
+          }
+        });
+      }
+    }
+  });
+
+  const total = material + labour + overhead;
+  if (total === 0) {
+    return [
+      { name: "Material", value: 0, percent: 0, color: C.pista },
+      { name: "Labour", value: 0, percent: 0, color: C.blueDeep },
+      { name: "Overhead", value: 0, percent: 0, color: C.gold }
+    ];
+  }
+
+  return [
+    { name: "Material", value: material, percent: Math.round((material / total) * 100), color: C.pista },
+    { name: "Labour", value: labour, percent: Math.round((labour / total) * 100), color: C.blueDeep },
+    { name: "Overhead", value: overhead, percent: Math.round((overhead / total) * 100), color: C.gold }
+  ];
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────
 function Bdg({s}){
   const m={Paid:[C.green,"#e8f5e9"],Partial:[C.gold,"#fff8e1"],Unpaid:[C.red,"#fdecea"],Completed:[C.green,"#e8f5e9"],"Under Process":[C.blueDeep,"#e3f2fd"],Admin:[C.sageDark,C.pistaPale],Staff:[C.blueDeep,C.bluePale],Cash:[C.sage,C.pistaPale],Cheque:[C.blueDeep,C.bluePale],"Bank Transfer":[C.gold,C.orangePale],NEFT:[C.blueDeep,C.bluePale],UPI:[C.coral,C.coralPale],Material:[C.pista,C.pistaPale],Labour:[C.blueDeep,C.bluePale]};
@@ -199,17 +327,32 @@ function Login({onLogin}){
 }
 
 // ─── HOME ─────────────────────────────────────────────────────
-function Home({sites,user,setNav}){
+function Home({sites,user,setNav,onImportDemo}){
   const rev=sites.ongoing.reduce((a,s)=>a+s.payment.paid,0)+sites.completed.reduce((a,s)=>a+s.totalCost,0);
   const exp=sites.ongoing.reduce((a,s)=>a+s.expenses.material.reduce((b,m)=>b+m.advance,0)+s.expenses.labour.reduce((b,l)=>b+l.advance,0),0);
   const pending=sites.ongoing.reduce((a,s)=>a+Math.max(0,s.payment.totalDeal-s.payment.paid),0);
   const vouchers=sites.ongoing.reduce((a,s)=>a+s.expenses.bills.length,0);
+
+  const realChartData = computeRealChartData(sites);
+  const realPieData = computeRealPieData(sites);
+
   return(
     <div>
       <div style={{marginBottom:24}}>
         <div style={{fontSize:26,fontWeight:800,color:C.dark}}>Good Morning, {user.name} 👋</div>
         <div style={{fontSize:14,color:C.g400,marginTop:4}}>Construction business overview</div>
       </div>
+
+      {sites.ongoing.length === 0 && sites.completed.length === 0 && (
+        <div style={{background:C.orangePale,border:`1.5px solid ${C.orange}`,borderRadius:16,padding:"20px 24px",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:16}}>
+          <div>
+            <div style={{fontWeight:800,color:C.orange,fontSize:16}}>💡 Firebase Database is Empty</div>
+            <div style={{fontSize:13,color:C.g600,marginTop:4,lineHeight:1.5}}>Your Cloud Firestore database is currently empty. Click the button to import all initial dummy sites, payments, expenses, and clients to make the dashboard fully workable!</div>
+          </div>
+          <Btn onClick={onImportDemo}>📥 Import Default Demo Data</Btn>
+        </div>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:14,marginBottom:24}}>
         <StatCard icon="🏗️" label="Total Sites" value={sites.ongoing.length+sites.completed.length} sub={`${sites.ongoing.length} ongoing`} color={C.pista}/>
         <StatCard icon="⚙️" label="Under Process" value={sites.ongoing.length} sub="Active" color={C.blueDeep}/>
@@ -224,14 +367,14 @@ function Home({sites,user,setNav}){
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Monthly Revenue vs Expenses</div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={CHART}>
+            <AreaChart data={realChartData}>
               <defs>
                 <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.pista} stopOpacity={0.3}/><stop offset="95%" stopColor={C.pista} stopOpacity={0}/></linearGradient>
                 <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blueDeep} stopOpacity={0.2}/><stop offset="95%" stopColor={C.blueDeep} stopOpacity={0}/></linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
               <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
-              <YAxis tickFormatter={v=>`₹${v/100000}L`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
+              <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
               <Tooltip formatter={v=>fmt(v)} contentStyle={{borderRadius:10,fontSize:13}}/>
               <Area type="monotone" dataKey="revenue" stroke={C.pista} strokeWidth={2.5} fill="url(#rg)" name="Revenue"/>
               <Area type="monotone" dataKey="expense" stroke={C.blueDeep} strokeWidth={2} fill="url(#eg)" name="Expense"/>
@@ -241,14 +384,14 @@ function Home({sites,user,setNav}){
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Expense Split</div>
           <ResponsiveContainer width="100%" height={150}>
-            <PieChart><Pie data={PIE} cx="50%" cy="50%" innerRadius={42} outerRadius={68} dataKey="value" paddingAngle={4}>
-              {PIE.map((e,i)=><Cell key={i} fill={e.color}/>)}
+            <PieChart><Pie data={realPieData} cx="50%" cy="50%" innerRadius={42} outerRadius={68} dataKey="value" paddingAngle={4}>
+              {realPieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
             </Pie><Tooltip formatter={v=>`${v}%`} contentStyle={{borderRadius:10,fontSize:13}}/></PieChart>
           </ResponsiveContainer>
-          {PIE.map((d,i)=>(
+          {realPieData.map((d,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:d.color}}/><span style={{fontSize:13,color:C.g600}}>{d.name}</span></div>
-              <span style={{fontSize:13,fontWeight:700,color:C.dark}}>{d.value}%</span>
+              <span style={{fontSize:13,fontWeight:700,color:C.dark}}>{d.percent}%</span>
             </div>
           ))}
         </Card>
@@ -973,10 +1116,10 @@ function Reports({sites}){
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Revenue vs Expense</div>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={CHART}>
+            <BarChart data={computeRealChartData(sites)}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
               <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
-              <YAxis tickFormatter={v=>`₹${v/100000}L`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
+              <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
               <Tooltip formatter={v=>fmt(v)} contentStyle={{borderRadius:10,fontSize:13}}/>
               <Legend/>
               <Bar dataKey="revenue" name="Revenue" fill={C.pista} radius={[6,6,0,0]}/>
@@ -987,10 +1130,10 @@ function Reports({sites}){
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Profit Trend</div>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={CHART.map(d=>({...d,profit:d.revenue-d.expense}))}>
+            <LineChart data={computeRealChartData(sites).map(d=>({...d,profit:d.revenue-d.expense}))}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
               <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
-              <YAxis tickFormatter={v=>`₹${v/100000}L`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
+              <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
               <Tooltip formatter={v=>fmt(v)} contentStyle={{borderRadius:10,fontSize:13}}/>
               <Line type="monotone" dataKey="profit" stroke={C.gold} strokeWidth={2.5} dot={{r:4,fill:C.gold}} name="Profit"/>
             </LineChart>
@@ -1097,6 +1240,26 @@ export default function App(){
     };
   }, []);
 
+  async function handleSeedAll() {
+    try {
+      const batch = [];
+      INIT_CLIENTS.forEach(c => {
+        batch.push(setDoc(doc(db, "clients", c.id.toString()), c));
+      });
+      INIT_SITES.ongoing.forEach(s => {
+        batch.push(setDoc(doc(db, "sites", s.id.toString()), { ...s, status: "ongoing" }));
+      });
+      INIT_SITES.completed.forEach(s => {
+        batch.push(setDoc(doc(db, "sites", s.id.toString()), { ...s, status: "completed" }));
+      });
+      await Promise.all(batch);
+      alert("Success: Demo data successfully imported to Firebase Firestore!");
+    } catch (err) {
+      console.error(err);
+      alert("Error seeding database: " + err.message);
+    }
+  }
+
   const navItems=[
     {id:"home",icon:"🏠",label:"Dashboard"},
     {id:"sites",icon:"🏗️",label:"Sites"},
@@ -1163,7 +1326,7 @@ export default function App(){
           </div>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:24}}>
-          {nav==="home"&&<Home sites={sites} user={user} setNav={setNav}/>}
+          {nav==="home"&&<Home sites={sites} user={user} setNav={setNav} onImportDemo={handleSeedAll}/>}
           {nav==="sites"&&<Sites sites={sites}/>}
           {nav==="transactions"&&<Transactions sites={sites}/>}
           {nav==="vouchers"&&<Vouchers sites={sites}/>}
