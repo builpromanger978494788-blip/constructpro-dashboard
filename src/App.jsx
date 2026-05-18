@@ -4,15 +4,16 @@ import { db } from "./firebase";
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 
 const C = {
-  pista:"#7cb98a",pistaLight:"#a8d4b0",pistaPale:"#e8f5ec",
-  mint:"#b2dfc4",mintPale:"#f0faf4",sage:"#8fad96",sageDark:"#5a8a6a",
-  beige:"#f7f3ed",offWhite:"#f4f6f5",
-  g100:"#f3f4f6",g200:"#e5e7eb",g400:"#9ca3af",g500:"#6b7280",g600:"#4b5563",g700:"#374151",
-  blue:"#a8c4e0",bluePale:"#e8f2fa",blueDeep:"#5b8db8",
-  orange:"#f0c080",orangePale:"#fef3e0",coral:"#e8a090",coralPale:"#fdecea",
-  red:"#e07070",green:"#6dab7e",gold:"#c8a84b",
-  dark:"#1e2d24",
-  sh:"0 2px 16px rgba(90,138,106,0.10)",shM:"0 4px 24px rgba(90,138,106,0.14)",shL:"0 8px 40px rgba(90,138,106,0.18)",
+  pista:"var(--pista)",pistaLight:"var(--pistaLight)",pistaPale:"var(--pistaPale)",
+  mint:"var(--mint)",mintPale:"var(--mintPale)",sage:"var(--sage)",sageDark:"var(--sageDark)",
+  beige:"var(--beige)",offWhite:"var(--offWhite)",
+  g100:"var(--g100)",g200:"var(--g200)",g400:"var(--g400)",g500:"var(--g500)",g600:"var(--g600)",g700:"var(--g700)",
+  blue:"var(--blue)",bluePale:"var(--bluePale)",blueDeep:"var(--blueDeep)",
+  orange:"var(--orange)",orangePale:"var(--orangePale)",coral:"var(--coral)",coralPale:"var(--coralPale)",
+  red:"var(--red)",green:"var(--green)",gold:"var(--gold)",
+  dark:"var(--dark)",
+  cardBg:"var(--cardBg)",
+  sh:"var(--sh)",shM:"var(--shM)",shL:"var(--shL)",
 };
 
 const fmt = n => n>=10000000?`₹${(n/10000000).toFixed(2)}Cr`:n>=100000?`₹${(n/100000).toFixed(1)}L`:`₹${Number(n).toLocaleString("en-IN")}`;
@@ -200,25 +201,25 @@ function Bdg({s}){
   const[c,bg]=m[s]||[C.g500,C.g100];
   return<span style={{padding:"3px 11px",borderRadius:20,background:bg,color:c,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{s}</span>;
 }
-function Card({children,style={}}){return<div style={{background:"#fff",borderRadius:16,boxShadow:C.sh,...style}}>{children}</div>;}
+function Card({children,style={}}){return<div style={{background:C.cardBg,borderRadius:16,boxShadow:C.sh,...style}}>{children}</div>;}
 function StatCard({icon,label,value,sub,color}){
   return(
-    <div style={{background:"#fff",borderRadius:16,padding:"22px 24px",boxShadow:C.sh,borderTop:`4px solid ${color}`,position:"relative",overflow:"hidden"}}>
+    <div style={{background:C.cardBg,borderRadius:16,padding:"22px 24px",boxShadow:C.sh,borderTop:`4px solid ${color}`,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",top:16,right:16,width:44,height:44,borderRadius:12,background:color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{icon}</div>
-      <div style={{fontSize:12,color:C.g400,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8}}>{label}</div>
-      <div style={{fontSize:26,fontWeight:800,color:C.dark,marginBottom:4,lineHeight:1.1}}>{value}</div>
+      <div style={{fontSize:12,color:C.g400,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8,paddingRight:42}}>{label}</div>
+      <div style={{fontSize:26,fontWeight:600,color:C.dark,marginBottom:4,lineHeight:1.1}}>{value}</div>
       {sub&&<div style={{fontSize:12,color:C.g400}}>{sub}</div>}
     </div>
   );
 }
 function Btn({children,onClick,v="primary",small,full}){
-  const st={primary:{background:C.sageDark,color:"#fff",border:"none"},secondary:{background:C.pistaPale,color:C.sageDark,border:`1.5px solid ${C.pistaLight}`},ghost:{background:"transparent",color:C.g500,border:`1.5px solid ${C.g200}`},danger:{background:"#fdecea",color:C.red,border:"none"},blue:{background:C.bluePale,color:C.blueDeep,border:"none"}};
+  const st={primary:{background:C.sageDark,color:"var(--btnPrimaryText)",border:"none"},secondary:{background:C.pistaPale,color:C.sageDark,border:`1.5px solid ${C.pistaLight}`},ghost:{background:"transparent",color:C.g500,border:`1.5px solid ${C.g200}`},danger:{background:C.coralPale,color:C.red,border:"none"},blue:{background:C.bluePale,color:C.blueDeep,border:"none"}};
   return<button onClick={onClick} style={{...st[v],borderRadius:10,padding:small?"6px 14px":"10px 20px",fontSize:small?12:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.15s",whiteSpace:"nowrap",width:full?"100%":"auto",justifyContent:full?"center":"flex-start"}}>{children}</button>;
 }
 function Modal({title,children,onClose,w=520}){
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(30,45,36,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-      <div style={{background:"#fff",borderRadius:20,padding:"32px 36px",width:`min(${w}px,95vw)`,maxHeight:"88vh",overflowY:"auto",boxShadow:C.shL}}>
+      <div style={{background:C.cardBg,borderRadius:20,padding:"32px 36px",width:`min(${w}px,95vw)`,maxHeight:"88vh",overflowY:"auto",boxShadow:C.shL}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
           <div style={{fontSize:18,fontWeight:800,color:C.dark}}>{title}</div>
           <button onClick={onClose} style={{background:C.g100,border:"none",borderRadius:10,width:34,height:34,cursor:"pointer",fontSize:16,color:C.g500}}>✕</button>
@@ -336,6 +337,26 @@ function Home({sites,user,setNav,onImportDemo}){
   const realChartData = computeRealChartData(sites);
   const realPieData = computeRealPieData(sites);
 
+  // Compute recent transactions and vouchers
+  const allPayments = [];
+  const allExpenses = [];
+
+  sites.ongoing.concat(sites.completed).forEach(s => {
+    if (s.payment && s.payment.methods) {
+      s.payment.methods.forEach(p => {
+        allPayments.push({ ...p, siteName: s.name, client: s.client });
+      });
+    }
+    if (s.expenses && s.expenses.bills) {
+      s.expenses.bills.forEach(b => {
+        allExpenses.push({ ...b, siteName: s.name });
+      });
+    }
+  });
+
+  const recentPayments = allPayments.sort((a, b) => b.id - a.id).slice(0, 4);
+  const recentExpenses = allExpenses.sort((a, b) => b.id - a.id).slice(0, 4);
+
   return(
     <div>
       <div style={{marginBottom:24}}>
@@ -408,7 +429,7 @@ function Home({sites,user,setNav,onImportDemo}){
           ))}
         </div>
       </Card>
-      <Card style={{overflow:"hidden"}}>
+      <Card style={{overflow:"hidden",marginBottom:20}}>
         <div style={{padding:"18px 22px",borderBottom:`1px solid ${C.g100}`,fontWeight:700,fontSize:15,color:C.dark}}>Site Progress Overview</div>
         {sites.ongoing.map(s=>(
           <div key={s.id} style={{padding:"14px 22px",borderBottom:`1px solid ${C.g100}`}}>
@@ -421,6 +442,42 @@ function Home({sites,user,setNav,onImportDemo}){
           </div>
         ))}
       </Card>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:20,marginBottom:20}}>
+        <Card style={{padding:20}}>
+          <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Recent Payments (Clients)</div>
+          {recentPayments.length === 0 ? (
+            <div style={{color:C.g400,fontSize:13,textAlign:"center",padding:20}}>No recent payments</div>
+          ) : (
+            recentPayments.map(p => (
+              <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:C.dark}}>{p.siteName}</div>
+                  <div style={{fontSize:12,color:C.g400,marginTop:4}}>{p.client} · <Bdg s={p.type}/></div>
+                </div>
+                <div style={{fontWeight:600,color:C.green,fontSize:14}}>+{fmt(p.amount)}</div>
+              </div>
+            ))
+          )}
+        </Card>
+        
+        <Card style={{padding:20}}>
+          <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Recent Vouchers & Expenses</div>
+          {recentExpenses.length === 0 ? (
+            <div style={{color:C.g400,fontSize:13,textAlign:"center",padding:20}}>No recent vouchers</div>
+          ) : (
+            recentExpenses.map(b => (
+              <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:C.dark}}>{b.billNo} · {b.material || b.work}</div>
+                  <div style={{fontSize:12,color:C.g400,marginTop:4}}>{b.siteName} · {b.contractor}</div>
+                </div>
+                <div style={{fontWeight:600,color:C.red,fontSize:14}}>-{fmt(b.total)}</div>
+              </div>
+            ))
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -468,9 +525,9 @@ function PayTab({site}){
     <div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:14,marginBottom:20}}>
         {[["Total Deal",fmt(p.totalDeal),C.dark],["Amount Paid",fmt(p.paid),C.green],["Pending",fmt(Math.max(0,rem)),C.red],["Extra Paid",fmt(extra),C.gold]].map(([l,v,c])=>(
-          <div key={l} style={{background:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:C.sh,borderLeft:`4px solid ${c}`}}>
+          <div key={l} style={{background:C.cardBg,borderRadius:14,padding:"16px 18px",boxShadow:C.sh,borderLeft:`4px solid ${c}`}}>
             <div style={{fontSize:12,color:C.g400,marginBottom:5,fontWeight:600}}>{l}</div>
-            <div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div>
+            <div style={{fontSize:20,fontWeight:600,color:c}}>{v}</div>
           </div>
         ))}
       </div>
@@ -734,7 +791,14 @@ function SiteDetail({site,onBack,onComplete}){
         <div style={{fontSize:12,color:C.g400,marginTop:6}}>Started: {site.startDate}</div>
       </Card>
 
-      <Tabs tabs={[["payment","💰 Payment"],["expenses","📋 Expenses"]]} active={main} onChange={setMain}/>
+      <Tabs tabs={[
+        ["payment","💰 Payment"],
+        ["expenses","📋 Expenses"],
+        ["details","ℹ️ Site Details"],
+        ["documents","📁 Documents Vault"],
+        ["timeline","🕒 Activity Timeline"]
+      ]} active={main} onChange={setMain}/>
+
       {main==="payment"&&<PayTab site={site}/>}
       {main==="expenses"&&<div>
         <Tabs tabs={[["material","🧱 Material"],["labour","👷 Labour"],["bills","🧾 Bills"]]} active={exp} onChange={setExp}/>
@@ -742,6 +806,132 @@ function SiteDetail({site,onBack,onComplete}){
         {exp==="labour"&&<LabTab site={site}/>}
         {exp==="bills"&&<BillsTab site={site}/>}
       </div>}
+
+      {main==="details"&& (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20,marginTop:10}}>
+          <Card style={{padding:22}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Basic Info & Specifications</div>
+            {[
+              ["Site Project Name", site.name],
+              ["Client / Owner Name", site.client],
+              ["Client Contact Phone", site.contact],
+              ["Site Location Address", site.address],
+              ["Construction Start Date", site.startDate],
+              ["Target Completion Date", site.estCompletion],
+            ].map(([k,v])=>(
+              <div key={k} style={{marginBottom:14}}>
+                <div style={{fontSize:11,color:C.g400,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,marginBottom:4}}>{k}</div>
+                <div style={{fontSize:14,color:C.dark,fontWeight:600}}>{v}</div>
+              </div>
+            ))}
+          </Card>
+          
+          <Card style={{padding:22}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Detailed Financial Balance</div>
+            {[
+              ["Total Construction Deal Value", fmt(site.payment.totalDeal), C.dark],
+              ["Revenue Collected to Date", fmt(site.payment.paid), C.green],
+              ["Outstanding Balance", fmt(Math.max(0, site.payment.totalDeal - site.payment.paid)), C.red],
+              ["Materials Expense Spent", fmt(site.expenses.bills.filter(b=>b.type==="Material").reduce((a,b)=>a+b.total,0)), C.orange],
+              ["Labour Expense Spent", fmt(site.expenses.bills.filter(b=>b.type==="Labour").reduce((a,b)=>a+b.total,0)), C.blueDeep],
+              ["Total Site Expenditure", fmt(site.expenses.bills.reduce((a,b)=>a+b.total,0)), C.red],
+            ].map(([k,v,c])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
+                <span style={{fontSize:13,color:C.g400,fontWeight:600}}>{k}</span>
+                <span style={{fontSize:14,fontWeight:700,color:c}}>{v}</span>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {main==="documents"&& (
+        <div style={{marginTop:10}}>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+            <Btn onClick={() => alert("Upload Document feature: Select a PDF, Image, or Doc file to upload to Firestore Cloud Storage!")}>
+              📤 Upload Site Document
+            </Btn>
+          </div>
+          <Card style={{padding:22}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Site Document Vault (Contracts & Blueprints)</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16}}>
+              {(site.documents || [
+                { id: 1, name: "Site_Approved_Blueprints_v2.pdf", size: "4.8 MB", date: "12 Apr 2026" },
+                { id: 2, name: "Mutual_Agreement_Signed.pdf", size: "2.1 MB", date: "15 Apr 2026" },
+                { id: 3, name: "Registry_Deed_Copy.pdf", size: "8.4 MB", date: "18 Apr 2026" }
+              ]).map(d => (
+                <div key={d.id} style={{background:C.offWhite,border:`1.5px solid ${C.g100}`,borderRadius:12,padding:16,display:"flex",flexDirection:"column",justify:"space-between",height:120}}>
+                  <div style={{fontSize:24}}>📄</div>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:13,color:C.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.name}>{d.name}</div>
+                    <div style={{fontSize:11,color:C.g400,marginTop:2}}>{d.size} · {d.date}</div>
+                  </div>
+                  <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}}>
+                    <a href="#" onClick={(e) => { e.preventDefault(); alert(`Downloading file: ${d.name}`); }} style={{color:C.blueDeep,fontWeight:700,fontSize:12,textDecoration:"none"}}>Download ⬇️</a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {main==="timeline"&& (
+        <div style={{marginTop:10}}>
+          <Card style={{padding:24}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:20}}>Project Activity Timeline & Feed</div>
+            <div style={{position:"relative",paddingLeft:30}}>
+              <div style={{position:"absolute",left:11,top:4,bottom:4,width:2,background:C.g100}}/>
+              {( () => {
+                const timelineEvents = [];
+                timelineEvents.push({ type: "start", title: "Site Project Initiated", desc: `Project deal started with client ${site.client} at deal value of ${fmt(site.payment.totalDeal)}`, date: site.startDate || "12-04-2026", icon: "🏗️", color: C.sageDark });
+                
+                if (site.payment && site.payment.methods) {
+                  site.payment.methods.forEach(p => {
+                    timelineEvents.push({ type: "payment", title: "Payment Received", desc: `Received payment amount of ${fmt(p.amount)} via ${p.type}`, date: p.date, icon: "💰", color: C.green });
+                  });
+                }
+                
+                if (site.expenses && site.expenses.bills) {
+                  site.expenses.bills.forEach(b => {
+                    timelineEvents.push({ type: "expense", title: "Expense Logged", desc: `${b.type} expenditure of ${fmt(b.total)} logged for ${b.material || b.work} by contractor ${b.contractor}`, date: b.date, icon: "🧾", color: C.red });
+                  });
+                }
+
+                const parseDate = dStr => {
+                  if (!dStr) return new Date();
+                  const parts = dStr.split(/[-/]/);
+                  if (parts.length === 3) {
+                    if (parts[2].length === 4) {
+                      return new Date(parts[2], parts[1] - 1, parts[0]);
+                    }
+                    if (parts[0].length === 4) {
+                      return new Date(parts[0], parts[1] - 1, parts[2]);
+                    }
+                  }
+                  const d = new Date(dStr);
+                  return isNaN(d.getTime()) ? new Date() : d;
+                };
+
+                const sortedTimeline = timelineEvents.sort((a, b) => parseDate(b.date) - parseDate(a.date));
+
+                return sortedTimeline.map((ev, idx) => (
+                  <div key={idx} style={{position:"relative",marginBottom:24}}>
+                    <div style={{position:"absolute",left:-30,top:0,width:24,height:24,borderRadius:"50%",background:ev.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11,boxShadow:C.sh}}>
+                      {ev.icon}
+                    </div>
+                    <div style={{paddingLeft:10}}>
+                      <div style={{fontSize:11,color:C.g400,fontWeight:700}}>{ev.date}</div>
+                      <div style={{fontWeight:700,fontSize:14,color:C.dark,marginTop:2}}>{ev.title}</div>
+                      <div style={{fontSize:13,color:C.g500,marginTop:4,lineHeight:1.4}}>{ev.desc}</div>
+                    </div>
+                  </div>
+                ));
+              })() }
+            </div>
+          </Card>
+        </div>
+      )}
 
       {editSite&&<Modal title="Edit Site Details" onClose={()=>setEditSite(false)} w={540}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -1151,7 +1341,7 @@ function Reports({sites}){
             <span style={{fontWeight:700,color:C.red}}>{fmt(r.unpaid)}</span>,
             <span style={{color:C.gold,fontWeight:700}}>{fmt(r.refund)}</span>,
             <span style={{color:C.g600}}>{fmt(r.expenses)}</span>,
-            <span style={{fontWeight:800,color:r.profit>=0?C.green:C.red}}>{fmt(r.profit)}</span>
+            <span style={{fontWeight:600,color:r.profit>=0?C.green:C.red}}>{fmt(r.profit)}</span>
           ])}/>
       </Card>
     </div>
@@ -1192,6 +1382,7 @@ export default function App(){
   const[user,setUser]=useState(null);
   const[nav, _setNav]=useState("home");
   const[navHistory, setNavHistory]=useState([]);
+  const[darkMode, setDarkMode]=useState(() => localStorage.getItem("darkMode") === "true");
   
   const setNav = (newNav) => {
     if (newNav === nav) return;
@@ -1289,14 +1480,167 @@ export default function App(){
     {id:"settings",icon:"⚙️",label:"Settings"},
   ];
 
-  if(!user)return<Login onLogin={u=>{setUser(u);setNav("home");}}/>;
+  if(!user) {
+    return (
+      <div data-theme={darkMode ? "dark" : "light"} style={{minHeight:"100vh",background:C.offWhite,color:C.dark,width:"100%"}}>
+        <style>{`
+          :root {
+            --pista: #7cb98a;
+            --pistaLight: #a8d4b0;
+            --pistaPale: #e8f5ec;
+            --mint: #b2dfc4;
+            --mintPale: #f0faf4;
+            --sage: #8fad96;
+            --sageDark: #5a8a6a;
+            --beige: #f7f3ed;
+            --offWhite: #f4f6f5;
+            --g100: #e2e8f0;
+            --g200: #cbd5e1;
+            --g400: #475569;
+            --g500: #334155;
+            --g600: #1e293b;
+            --g700: #0f172a;
+            --blue: #a8c4e0;
+            --bluePale: #e8f2fa;
+            --blueDeep: #5b8db8;
+            --orange: #f0c080;
+            --orangePale: #fef3e0;
+            --coral: #e8a090;
+            --coralPale: #fdecea;
+            --red: #e07070;
+            --green: #6dab7e;
+            --gold: #c8a84b;
+            --dark: #1e2d24;
+            --cardBg: #ffffff;
+            --sh: 0 2px 16px rgba(90,138,106,0.10);
+            --shM: 0 4px 24px rgba(90,138,106,0.14);
+            --shL: 0 8px 40px rgba(90,138,106,0.18);
+            --btnPrimaryText: #ffffff;
+          }
+          [data-theme="dark"] {
+            --pista: #8fad96;
+            --pistaLight: #5a8a6a;
+            --pistaPale: #1c2b21;
+            --mint: #a8d4b0;
+            --mintPale: #16261c;
+            --sage: #7cb98a;
+            --sageDark: #a8d4b0;
+            --beige: #1a1c1a;
+            --offWhite: #111312;
+            --g100: #242826;
+            --g200: #333835;
+            --g400: #9ca3af;
+            --g500: #d1d5db;
+            --g600: #e5e7eb;
+            --g700: #ffffff;
+            --blue: #a8c4e0;
+            --bluePale: #1f2b35;
+            --blueDeep: #7da5c9;
+            --orange: #f0c080;
+            --orangePale: #2f2516;
+            --coral: #e8a090;
+            --coralPale: #2b1d1d;
+            --red: #f87171;
+            --green: #86efac;
+            --gold: #fde047;
+            --dark: #ffffff;
+            --cardBg: #181c19;
+            --sh: 0 2px 16px rgba(0,0,0,0.4);
+            --shM: 0 4px 24px rgba(0,0,0,0.5);
+            --shL: 0 8px 40px rgba(0,0,0,0.6);
+            --btnPrimaryText: #121e15;
+          }
+          @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          ::-webkit-scrollbar { width: 5px; height: 5px; }
+          ::-webkit-scrollbar-track { background: var(--offWhite); }
+          ::-webkit-scrollbar-thumb { background: var(--pistaLight); border-radius: 10px; }
+          button { font-family: inherit; }
+        `}</style>
+        <Login onLogin={u=>{setUser(u);setNav("home");}}/>
+      </div>
+    );
+  }
 
   return(
-    <div style={{display:"flex",minHeight:"100vh",fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.offWhite}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:${C.offWhite};}::-webkit-scrollbar-thumb{background:${C.pistaLight};border-radius:10px;}button{font-family:inherit;}`}</style>
+    <div data-theme={darkMode ? "dark" : "light"} style={{display:"flex",minHeight:"100vh",fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.offWhite,width:"100%",color:C.dark}}>
+      <style>{`
+        :root {
+          --pista: #7cb98a;
+          --pistaLight: #a8d4b0;
+          --pistaPale: #e8f5ec;
+          --mint: #b2dfc4;
+          --mintPale: #f0faf4;
+          --sage: #8fad96;
+          --sageDark: #5a8a6a;
+          --beige: #f7f3ed;
+          --offWhite: #f4f6f5;
+          --g100: #e2e8f0;
+          --g200: #cbd5e1;
+          --g400: #475569;
+          --g500: #334155;
+          --g600: #1e293b;
+          --g700: #0f172a;
+          --blue: #a8c4e0;
+          --bluePale: #e8f2fa;
+          --blueDeep: #5b8db8;
+          --orange: #f0c080;
+          --orangePale: #fef3e0;
+          --coral: #e8a090;
+          --coralPale: #fdecea;
+          --red: #e07070;
+          --green: #6dab7e;
+          --gold: #c8a84b;
+          --dark: #1e2d24;
+          --cardBg: #ffffff;
+          --sh: 0 2px 16px rgba(90,138,106,0.10);
+          --shM: 0 4px 24px rgba(90,138,106,0.14);
+          --shL: 0 8px 40px rgba(90,138,106,0.18);
+          --btnPrimaryText: #ffffff;
+        }
+        [data-theme="dark"] {
+          --pista: #8fad96;
+          --pistaLight: #5a8a6a;
+          --pistaPale: #1c2b21;
+          --mint: #a8d4b0;
+          --mintPale: #16261c;
+          --sage: #7cb98a;
+          --sageDark: #a8d4b0;
+          --beige: #1a1c1a;
+          --offWhite: #111312;
+          --g100: #242826;
+          --g200: #333835;
+          --g400: #9ca3af;
+          --g500: #d1d5db;
+          --g600: #e5e7eb;
+          --g700: #ffffff;
+          --blue: #a8c4e0;
+          --bluePale: #1f2b35;
+          --blueDeep: #7da5c9;
+          --orange: #f0c080;
+          --orangePale: #2f2516;
+          --coral: #e8a090;
+          --coralPale: #2b1d1d;
+          --red: #f87171;
+          --green: #86efac;
+          --gold: #fde047;
+          --dark: #ffffff;
+          --cardBg: #181c19;
+          --sh: 0 2px 16px rgba(0,0,0,0.4);
+          --shM: 0 4px 24px rgba(0,0,0,0.5);
+          --shL: 0 8px 40px rgba(0,0,0,0.6);
+          --btnPrimaryText: #121e15;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: var(--offWhite); }
+        ::-webkit-scrollbar-thumb { background: var(--pistaLight); border-radius: 10px; }
+        button { font-family: inherit; }
+      `}</style>
 
       {/* Sidebar */}
-      <div style={{width:collapsed?64:230,background:"#fff",borderRight:`1px solid ${C.g100}`,display:"flex",flexDirection:"column",transition:"width 0.22s ease",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
+      <div style={{width:collapsed?64:230,background:C.cardBg,borderRight:`1px solid ${C.g100}`,display:"flex",flexDirection:"column",transition:"width 0.22s ease",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
         <div style={{padding:"18px 14px",borderBottom:`1px solid ${C.g100}`,display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.sageDark},${C.pista})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>🏗️</div>
           {!collapsed&&<div><div style={{fontWeight:800,fontSize:15,color:C.dark}}>BuildPro</div><div style={{fontSize:11,color:C.g400}}>Construction ERP</div></div>}
@@ -1333,7 +1677,7 @@ export default function App(){
 
       {/* Main */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
-        <div style={{background:"#fff",borderBottom:`1px solid ${C.g100}`,padding:"0 24px",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
+        <div style={{background:C.cardBg,borderBottom:`1px solid ${C.g100}`,padding:"0 24px",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {nav !== "home" && (
               <button 
@@ -1342,16 +1686,16 @@ export default function App(){
                   background: C.g100,
                   border: "none",
                   borderRadius: "50%",
-                  width: 30,
-                  height: 30,
+                  width: 36,
+                  height: 36,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
-                  fontSize: 13,
+                  fontSize: 16,
                   color: C.sageDark,
                   transition: "all 0.15s ease",
-                  marginRight: 6
+                  marginRight: 10
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = C.pistaPale; e.currentTarget.style.transform = "translateX(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = C.g100; e.currentTarget.style.transform = "translateX(0)"; }}
@@ -1364,6 +1708,30 @@ export default function App(){
             <span style={{fontWeight:700,fontSize:15,color:C.dark}}>{navItems.find(n=>n.id===nav)?.label}</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button 
+              onClick={() => {
+                const nextMode = !darkMode;
+                setDarkMode(nextMode);
+                localStorage.setItem("darkMode", String(nextMode));
+              }}
+              style={{
+                background: C.g100,
+                border: "none",
+                borderRadius: "50%",
+                width: 34,
+                height: 34,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 16,
+                transition: "all 0.15s ease",
+                color: C.dark
+              }}
+              title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {darkMode ? "☀️" : "🌙"}
+            </button>
             <div style={{fontSize:13,color:C.g400}}>{new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}</div>
             <div style={{width:6,height:6,borderRadius:"50%",background:C.green}}/>
             <Bdg s={user.role}/>
