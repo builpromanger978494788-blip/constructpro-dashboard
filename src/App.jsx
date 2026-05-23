@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db, auth, provider } from "./firebase";
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch, query, where, getDocs } from "firebase/firestore";
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch, query, where, getDocs, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -198,6 +198,19 @@ function Bdg({s}){
   const[c,bg]=m[s]||[C.g500,C.g100];
   return<span style={{padding:"3px 11px",borderRadius:20,background:bg,color:c,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{s}</span>;
 }
+
+// Global Helper to move deleted items to Trash
+async function moveToTrash(type, data, extra = {}) {
+  const trashId = Date.now().toString();
+  await setDoc(doc(db, "trash", trashId), {
+    id: trashId,
+    deletedAt: Date.now(),
+    type,
+    data,
+    ...extra
+  });
+}
+
 function Card({children,style={}}){return<div style={{background:C.cardBg,borderRadius:16,boxShadow:C.sh,...style}}>{children}</div>;}
 function StatCard({icon,label,value,sub,color}){
   return(
@@ -570,6 +583,18 @@ function PayTab({site}){
     setForm({amount:"",type:"Cash",date:""});setShowAdd(false);
   }
   async function delPayment(id){
+    if(!confirm("Are you sure you want to delete this payment record? It will be moved to the Trash Bin.")) return;
+    const paymentToDelete = site.payment.methods.find(m => m.id === id);
+    if (!paymentToDelete) return;
+    const trashId = Date.now().toString();
+    await setDoc(doc(db, "trash", trashId), {
+      id: trashId,
+      deletedAt: Date.now(),
+      type: "Payment",
+      parentSiteId: site.id.toString(),
+      siteName: site.name,
+      data: paymentToDelete
+    });
     const newMethods=site.payment.methods.filter(m=>m.id!==id);
     const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
     const siteRef = doc(db, "sites", site.id.toString());
@@ -696,6 +721,13 @@ function BillsTab({site}){
     setForm(blank);isEdit?setEditRow(null):setShowAdd(false);
   }
   async function del(id){
+    if(!confirm("Are you sure you want to delete this expense bill? It will be moved to the Trash Bin.")) return;
+    const billToDelete = site.expenses.bills.find(b => b.id === id);
+    if (!billToDelete) return;
+    await moveToTrash("Expense", billToDelete, {
+      parentSiteId: site.id.toString(),
+      siteName: site.name
+    });
     const newBills=site.expenses.bills.filter(b=>b.id!==id);
     const siteRef = doc(db, "sites", site.id.toString());
     await updateDoc(siteRef, {
@@ -1011,6 +1043,9 @@ function Sites({user, sites, materialEntries, labourEntries}){
   }
 
   async function delCompleted(id){
+    const s = sites.completed.find(x => x.id === id);
+    if (!s) return;
+    await moveToTrash("Site", s, { originalCollection: "sites" });
     await deleteDoc(doc(db, "sites", id.toString()));
   }
 
@@ -1054,7 +1089,19 @@ function Sites({user, sites, materialEntries, labourEntries}){
                   <label style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:C.pistaPale,borderRadius:8,cursor:"pointer",border:`1.5px solid ${C.pistaLight}`,fontSize:12,fontWeight:600,color:C.sageDark}}>
                     <input type="checkbox" onChange={e=>{if(e.target.checked)completeSite(s.id);}} style={{accentColor:C.sageDark}}/> Complete
                   </label>
-                  <Btn small v="danger" onClick={async ()=>await deleteDoc(doc(db, "sites", s.id.toString()))}>🗑️</Btn>
+                  <Btn small v="danger" onClick={async ()=>{
+                    if(confirm(`Are you sure you want to delete ongoing site "${s.name}"? It will be moved to the Trash Bin.`)){
+                      const trashId = Date.now().toString();
+                      await setDoc(doc(db, "trash", trashId), {
+                        id: trashId,
+                        deletedAt: Date.now(),
+                        type: "Site",
+                        originalCollection: "sites",
+                        data: s
+                      });
+                      await deleteDoc(doc(db, "sites", s.id.toString()));
+                    }
+                  }}>🗑️</Btn>
                 </div>
               </Card>
             );
@@ -1080,7 +1127,11 @@ function Sites({user, sites, materialEntries, labourEntries}){
                 cells.push(s.timeline, <Bdg s="Completed"/>,
                   <div style={{display:"flex",gap:6}}>
                     <Btn small v="secondary" onClick={()=>setEditCompleted({...s})}>✏️</Btn>
-                    <Btn small v="danger" onClick={()=>delCompleted(s.id)}>🗑️</Btn>
+                    <Btn small v="danger" onClick={()=>{
+                      if(confirm(`Are you sure you want to delete completed site "${s.name}"? It will be moved to the Trash Bin.`)){
+                        delCompleted(s.id);
+                      }
+                    }}>🗑️</Btn>
                   </div>
                 );
                 return cells;
@@ -1500,9 +1551,19 @@ function Ledger({ materialEntries, labourEntries }) {
   const uniqueContractors = Object.keys(labGroups);
 
   async function handleDelete(type, name) {
-    if (!confirm(`Delete all entries for ${type === 'Material' ? 'vendor' : 'contractor'} ${name}? This cannot be undone.`)) return;
-    const batch = writeBatch(db);
+    if (!confirm(`Are you sure you want to delete all entries for ${type === 'Material' ? 'vendor' : 'contractor'} "${name}"? They will be moved to the Trash Bin.`)) return;
     const entries = type === "Material" ? materialEntries.filter(m => m.vendor === name) : labourEntries.filter(l => l.contractor === name);
+    if (entries.length === 0) return;
+    const trashId = Date.now().toString();
+    await setDoc(doc(db, "trash", trashId), {
+      id: trashId,
+      deletedAt: Date.now(),
+      type: "Ledger",
+      entryType: type,
+      vendorOrContractor: name,
+      data: entries
+    });
+    const batch = writeBatch(db);
     entries.forEach(e => {
       const ref = doc(db, type === "Material" ? "material_entries" : "labour_entries", e.id);
       batch.delete(ref);
@@ -1763,7 +1824,19 @@ function Clients({user, clients}){
             ))}
             <div style={{marginTop:12,display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn small v="secondary" onClick={()=>{setEditC(c.id);setForm({name:c.name,mobile:c.mobile,status:c.status,totalValue:c.totalValue,contractor:c.contractor,startDate:c.startDate,endDate:c.endDate,site:c.site});}}>✏️ Edit</Btn>
-              <Btn small v="danger" onClick={async ()=>await deleteDoc(doc(db, "clients", c.id.toString()))}>🗑️</Btn>
+              <Btn small v="danger" onClick={async ()=>{
+                if (confirm(`Are you sure you want to delete client "${c.name}"? It will be moved to the Trash Bin.`)) {
+                  const trashId = Date.now().toString();
+                  await setDoc(doc(db, "trash", trashId), {
+                    id: trashId,
+                    deletedAt: Date.now(),
+                    type: "Client",
+                    originalCollection: "clients",
+                    data: c
+                  });
+                  await deleteDoc(doc(db, "clients", c.id.toString()));
+                }
+              }}>🗑️</Btn>
             </div>
           </Card>
         ))}
@@ -1964,9 +2037,10 @@ function UsersSection({ users }) {
     }
   }
 
-  async function handleDelete(id, name) {
-    if (confirm(`Are you sure you want to delete ${name}?`)) {
-      await deleteDoc(doc(db, "users", id));
+  async function handleDelete(u) {
+    if (confirm(`Are you sure you want to delete user "${u.name}"? It will be moved to the Trash Bin.`)) {
+      await moveToTrash("User", u, { originalCollection: "users" });
+      await deleteDoc(doc(db, "users", u.id));
     }
   }
 
@@ -2023,7 +2097,7 @@ function UsersSection({ users }) {
 
             <div style={{marginTop:12,display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn small v="secondary" onClick={() => { setEditUser(u.id); setForm(u); setErr(""); }}>✏️ Edit</Btn>
-              <Btn small v="danger" onClick={() => handleDelete(u.id, u.name)}>🗑️ Delete</Btn>
+              <Btn small v="danger" onClick={() => handleDelete(u)}>🗑️ Delete</Btn>
             </div>
           </Card>
         ))}
@@ -2046,6 +2120,205 @@ function UsersSection({ users }) {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+// ─── TRASH BIN ────────────────────────────────────────────────
+function TrashBin({trashList}) {
+  const [tab, setTab] = useState("sites");
+
+  const sites = trashList.filter(t => t.type === "Site");
+  const clients = trashList.filter(t => t.type === "Client");
+  const users = trashList.filter(t => t.type === "User");
+  const payments = trashList.filter(t => t.type === "Payment");
+  const expenses = trashList.filter(t => t.type === "Expense");
+  const ledgers = trashList.filter(t => t.type === "Ledger");
+
+  async function handleRestore(item) {
+    if (!confirm(`Are you sure you want to restore this ${item.type.toLowerCase()}?`)) return;
+    try {
+      if (item.type === "Site") {
+        await setDoc(doc(db, "sites", item.data.id.toString()), item.data);
+      } else if (item.type === "Client") {
+        await setDoc(doc(db, "clients", item.data.id.toString()), item.data);
+      } else if (item.type === "User") {
+        await setDoc(doc(db, "users", item.data.id), item.data);
+      } else if (item.type === "Payment") {
+        const siteRef = doc(db, "sites", item.parentSiteId);
+        const siteSnap = await getDoc(siteRef);
+        if (!siteSnap.exists()) {
+          alert(`Cannot restore payment. Please restore the parent site "${item.siteName || "Unknown"}" first.`);
+          return;
+        }
+        const siteData = siteSnap.data();
+        const newMethods = [...(siteData.payment?.methods || []), item.data];
+        const newPaid = newMethods.reduce((a, m) => a + m.amount, 0);
+        await updateDoc(siteRef, {
+          "payment.methods": newMethods,
+          "payment.paid": newPaid
+        });
+      } else if (item.type === "Expense") {
+        const siteRef = doc(db, "sites", item.parentSiteId);
+        const siteSnap = await getDoc(siteRef);
+        if (!siteSnap.exists()) {
+          alert(`Cannot restore expense. Please restore the parent site "${item.siteName || "Unknown"}" first.`);
+          return;
+        }
+        const siteData = siteSnap.data();
+        const newBills = [...(siteData.expenses?.bills || []), item.data];
+        await updateDoc(siteRef, {
+          "expenses.bills": newBills
+        });
+      } else if (item.type === "Ledger") {
+        const batch = writeBatch(db);
+        const coll = item.entryType === "Material" ? "material_entries" : "labour_entries";
+        item.data.forEach(e => {
+          const ref = doc(db, coll, e.id);
+          batch.set(ref, e);
+        });
+        await batch.commit();
+      }
+      await deleteDoc(doc(db, "trash", item.id));
+      alert("Item restored successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Error restoring item: " + err.message);
+    }
+  }
+
+  async function handlePermanentDelete(item) {
+    if (!confirm("Are you sure you want to permanently delete this item? This action is irreversible.")) return;
+    try {
+      await deleteDoc(doc(db, "trash", item.id));
+      alert("Item deleted permanently.");
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting item: " + err.message);
+    }
+  }
+
+  const trashTabs = [
+    ["sites", `🏗️ Sites (${sites.length})`],
+    ["clients", `👥 Clients (${clients.length})`],
+    ["users", `👤 Users (${users.length})`],
+    ["payments", `💰 Payments (${payments.length})`],
+    ["expenses", `📋 Expenses (${expenses.length})`],
+    ["ledger", `📖 Ledger (${ledgers.length})`],
+  ];
+
+  return (
+    <div>
+      <Hdr title="Recycle Bin" sub="View, restore or permanently delete deleted records" />
+      <Tabs tabs={trashTabs} active={tab} onChange={setTab} />
+
+      <Card style={{marginTop: 18}}>
+        {tab === "sites" && (
+          <Tbl 
+            cols={["Site Name", "Client", "Status", "Deleted At", "Actions"]}
+            rows={sites.map(item => [
+              <span style={{fontWeight: 700}}>{item.data?.name || "N/A"}</span>,
+              item.data?.client || "N/A",
+              <Bdg s={item.data?.status || "Unknown"}/>,
+              new Date(item.deletedAt).toLocaleString("en-IN"),
+              <div style={{display: "flex", gap: 8}}>
+                <Btn small onClick={() => handleRestore(item)}>🔄 Restore</Btn>
+                <Btn small v="danger" onClick={() => handlePermanentDelete(item)}>🗑️ Permanent Delete</Btn>
+              </div>
+            ])}
+            emptyMsg="Recycle bin is empty for sites."
+          />
+        )}
+
+        {tab === "clients" && (
+          <Tbl 
+            cols={["Client Name", "Site", "Mobile", "Deleted At", "Actions"]}
+            rows={clients.map(item => [
+              <span style={{fontWeight: 700}}>{item.data?.name || "N/A"}</span>,
+              item.data?.site || "N/A",
+              item.data?.mobile || "N/A",
+              new Date(item.deletedAt).toLocaleString("en-IN"),
+              <div style={{display: "flex", gap: 8}}>
+                <Btn small onClick={() => handleRestore(item)}>🔄 Restore</Btn>
+                <Btn small v="danger" onClick={() => handlePermanentDelete(item)}>🗑️ Permanent Delete</Btn>
+              </div>
+            ])}
+            emptyMsg="Recycle bin is empty for clients."
+          />
+        )}
+
+        {tab === "users" && (
+          <Tbl 
+            cols={["Name", "Gmail", "Role", "Deleted At", "Actions"]}
+            rows={users.map(item => [
+              <span style={{fontWeight: 700}}>{item.data?.name || "N/A"}</span>,
+              item.data?.email || "N/A",
+              <Bdg s={item.data?.role || "Staff"}/>,
+              new Date(item.deletedAt).toLocaleString("en-IN"),
+              <div style={{display: "flex", gap: 8}}>
+                <Btn small onClick={() => handleRestore(item)}>🔄 Restore</Btn>
+                <Btn small v="danger" onClick={() => handlePermanentDelete(item)}>🗑️ Permanent Delete</Btn>
+              </div>
+            ])}
+            emptyMsg="Recycle bin is empty for users."
+          />
+        )}
+
+        {tab === "payments" && (
+          <Tbl 
+            cols={["Site Name", "Date", "Method", "Amount", "Deleted At", "Actions"]}
+            rows={payments.map(item => [
+              <span style={{fontWeight: 700}}>{item.siteName || "N/A"}</span>,
+              item.data?.date || "N/A",
+              <Bdg s={item.data?.type || "Cash"}/>,
+              <span style={{fontWeight: 700, color: C.green}}>{fmt(item.data?.amount || 0)}</span>,
+              new Date(item.deletedAt).toLocaleString("en-IN"),
+              <div style={{display: "flex", gap: 8}}>
+                <Btn small onClick={() => handleRestore(item)}>🔄 Restore</Btn>
+                <Btn small v="danger" onClick={() => handlePermanentDelete(item)}>🗑️ Permanent Delete</Btn>
+              </div>
+            ])}
+            emptyMsg="Recycle bin is empty for payments."
+          />
+        )}
+
+        {tab === "expenses" && (
+          <Tbl 
+            cols={["Site Name", "Bill No", "Type", "Contractor", "Material/Work", "Total", "Deleted At", "Actions"]}
+            rows={expenses.map(item => [
+              <span style={{fontWeight: 700}}>{item.siteName || "N/A"}</span>,
+              item.data?.billNo || "N/A",
+              <Bdg s={item.data?.type || "Material"}/>,
+              item.data?.contractor || "N/A",
+              item.data?.material || item.data?.work || "N/A",
+              <span style={{fontWeight: 700, color: C.red}}>{fmt(item.data?.total || 0)}</span>,
+              new Date(item.deletedAt).toLocaleString("en-IN"),
+              <div style={{display: "flex", gap: 8}}>
+                <Btn small onClick={() => handleRestore(item)}>🔄 Restore</Btn>
+                <Btn small v="danger" onClick={() => handlePermanentDelete(item)}>🗑️ Permanent Delete</Btn>
+              </div>
+            ])}
+            emptyMsg="Recycle bin is empty for expenses."
+          />
+        )}
+
+        {tab === "ledger" && (
+          <Tbl 
+            cols={["Vendor / Contractor", "Entry Type", "Entries Count", "Deleted At", "Actions"]}
+            rows={ledgers.map(item => [
+              <span style={{fontWeight: 700}}>{item.vendorOrContractor || "N/A"}</span>,
+              <Bdg s={item.entryType || "Material"}/>,
+              item.data?.length || 0,
+              new Date(item.deletedAt).toLocaleString("en-IN"),
+              <div style={{display: "flex", gap: 8}}>
+                <Btn small onClick={() => handleRestore(item)}>🔄 Restore</Btn>
+                <Btn small v="danger" onClick={() => handlePermanentDelete(item)}>🗑️ Permanent Delete</Btn>
+              </div>
+            ])}
+            emptyMsg="Recycle bin is empty for ledger entries."
+          />
+        )}
+      </Card>
     </div>
   );
 }
@@ -2081,6 +2354,7 @@ export default function App(){
   const[clients,setClients]=useState([]);
   const[materialEntries,setMaterialEntries]=useState([]);
   const[labourEntries,setLabourEntries]=useState([]);
+  const[trashList,setTrashList]=useState([]);
   const[collapsed,setCollapsed]=useState(false);
   const[mobileOpen,setMobileOpen]=useState(false);
 
@@ -2180,6 +2454,12 @@ export default function App(){
       setUsersList(list);
     });
 
+    const unsubTrash = onSnapshot(collection(db, "trash"), (snapshot) => {
+      const list = [];
+      snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+      setTrashList(list.sort((a,b) => b.deletedAt - a.deletedAt));
+    });
+
     return () => {
       unsubAuth();
       unsubSites();
@@ -2187,6 +2467,7 @@ export default function App(){
       unsubMaterial();
       unsubLabour();
       unsubUsers();
+      unsubTrash();
     };
   }, []);
 
@@ -2221,6 +2502,7 @@ export default function App(){
     {id:"ledger",icon:"📖",label:"Ledger"},
     ...(user?.role==="Admin"?[{id:"users",icon:"👤",label:"Users"}]:[]),
     {id:"settings",icon:"⚙️",label:"Settings"},
+    {id:"trash",icon:"🗑️",label:"Recycle Bin"},
   ];
 
   if (authLoading) {
@@ -2573,6 +2855,7 @@ export default function App(){
           {nav==="ledger"&&<Ledger materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="users"&&user.role==="Admin"&&<UsersSection users={usersList}/>}
           {nav==="settings"&&<Settings user={user} onUpdateUser={setUser}/>}
+          {nav==="trash"&&<TrashBin trashList={trashList}/>}
         </div>
       </div>
     </div>
