@@ -216,7 +216,7 @@ function Btn({children,onClick,v="primary",small,full}){
 function Modal({title,children,onClose,w=520}){
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(30,45,36,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-      <div style={{background:C.cardBg,borderRadius:20,padding:"32px 36px",width:`min(${w}px,95vw)`,maxHeight:"88vh",overflowY:"auto",boxShadow:C.shL}}>
+      <div className="modal-container" style={{background:C.cardBg,borderRadius:20,padding:"32px 36px",width:`min(${w}px,95vw)`,maxHeight:"88vh",overflowY:"auto",boxShadow:C.shL}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
           <div style={{fontSize:18,fontWeight:800,color:C.dark}}>{title}</div>
           <button onClick={onClose} style={{background:C.g100,border:"none",borderRadius:10,width:34,height:34,cursor:"pointer",fontSize:16,color:C.g500}}>✕</button>
@@ -438,7 +438,7 @@ function Home({sites,user,setNav,onImportDemo}){
         <StatCard icon="👥" label="Clients" value={INIT_CLIENTS.length} sub="Registered" color={C.sage}/>
         <StatCard icon="🧾" label="Vouchers" value={vouchers} sub="Records" color={C.pistaLight}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:20}}>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:20}}>
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Monthly Revenue vs Expenses</div>
           <ResponsiveContainer width="100%" height={200}>
@@ -923,7 +923,7 @@ function SiteDetail({site,onBack,onComplete, sites, materialEntries, labourEntri
       )}
 
       {editSite&&<Modal title="Edit Site Details" onClose={()=>setEditSite(false)} w={540}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <Fld label="Site Name" value={siteForm.name} onChange={e=>setSiteForm({...siteForm,name:e.target.value})}/>
           <Fld label="Client Name" value={siteForm.client} onChange={e=>setSiteForm({...siteForm,client:e.target.value})}/>
           <Fld label="Contact" value={siteForm.contact} onChange={e=>setSiteForm({...siteForm,contact:e.target.value})}/>
@@ -1069,7 +1069,7 @@ function Sites({sites, materialEntries, labourEntries}){
       )}
 
       {showAdd&&<Modal title="Add New Site" onClose={()=>{setShowAdd(false);setForm(blank);localStorage.removeItem("siteAddFormData");}} w={560}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <Fld label="Site Name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
           <Fld label="Client Name *" value={form.client} onChange={e=>setForm({...form,client:e.target.value})}/>
           <Fld label="Contact" value={form.contact} onChange={e=>setForm({...form,contact:e.target.value})}/>
@@ -1193,11 +1193,11 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
           </select>
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <Fld label="MATERIAL" value={form.material} onChange={e=>setForm({...form,material:e.target.value})}/>
         <Fld label="VENDOR" value={form.vendor} onChange={e=>setForm({...form,vendor:e.target.value})}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{marginBottom: 14}}>
           <div style={{fontSize:12,color:C.g500,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>QUANTITY</div>
           <div style={{display:"flex",gap:8}}>
@@ -1740,7 +1740,7 @@ function Clients({clients}){
         ))}
       </div>
       {(showAdd||editC)&&<Modal title={editC?"Edit Client":"Add Client"} onClose={()=>{setShowAdd(false);setEditC(null);setForm(blank);localStorage.removeItem("clientAddFormData");}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <Fld label="Name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
           <Fld label="Mobile" value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
           <Fld label="Site" value={form.site} onChange={e=>setForm({...form,site:e.target.value})}/>
@@ -1767,12 +1767,12 @@ function Reports({sites}){
   return(
     <div>
       <Hdr title="Reports & Analytics" sub="Admin only — financial intelligence"/>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:24}}>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:24}}>
         <StatCard icon="💰" label="Total Revenue" value={fmt(rev)} sub="Collected" color={C.green}/>
         <StatCard icon="📉" label="Total Expenses" value={fmt(exp)} sub="Spent" color={C.red}/>
         <StatCard icon="📈" label="Net Profit" value={fmt(profit)} sub={rev>0?`${Math.round((profit/rev)*100)}% margin`:""} color={C.gold}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:18,marginBottom:22}}>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:18,marginBottom:22}}>
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Revenue vs Expense</div>
           <ResponsiveContainer width="100%" height={200}>
@@ -1824,7 +1824,7 @@ function Settings({user, onUpdateUser}){
   return(
     <div>
       <Hdr title="Settings" sub="Account & preferences"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Profile</div>
           <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20,padding:14,background:C.pistaPale,borderRadius:12}}>
@@ -2002,7 +2002,7 @@ function UsersSection({ users }) {
 
       {(showAdd || editUser) && (
         <Modal title={editUser ? "Edit User" : `Add New ${tab === "staff" ? "Staff" : "Admin"}`} onClose={() => { setShowAdd(false); setEditUser(null); setForm(blank); localStorage.removeItem("userAddFormData"); }}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <Fld label="Full Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="E.g. Rajesh Kumar" />
             <Fld label="Username *" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="E.g. rajeshk" />
             <Fld label="Gmail Address *" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="E.g. user@gmail.com" />
@@ -2053,6 +2053,7 @@ export default function App(){
   const[materialEntries,setMaterialEntries]=useState([]);
   const[labourEntries,setLabourEntries]=useState([]);
   const[collapsed,setCollapsed]=useState(false);
+  const[mobileOpen,setMobileOpen]=useState(false);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -2359,10 +2360,32 @@ export default function App(){
         ::-webkit-scrollbar-track { background: var(--offWhite); }
         ::-webkit-scrollbar-thumb { background: var(--pistaLight); border-radius: 10px; }
         button { font-family: inherit; }
+        @media (max-width: 768px) {
+          .sidebar-desktop {
+            display: none !important;
+          }
+          .hamburger-btn {
+            display: block !important;
+          }
+          .main-content-container {
+            padding: 12px !important;
+          }
+          .main-header {
+            padding: 0 12px !important;
+          }
+          .grid-responsive {
+            grid-template-columns: 1fr !important;
+          }
+        }
+        @media (max-width: 480px) {
+          .modal-container {
+            padding: 20px 16px !important;
+          }
+        }
       `}</style>
 
-      {/* Sidebar */}
-      <div style={{width:collapsed?64:230,background:C.cardBg,borderRight:`1px solid ${C.g100}`,display:"flex",flexDirection:"column",transition:"width 0.22s ease",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
+      {/* Sidebar (Desktop) */}
+      <div className="sidebar-desktop" style={{width:collapsed?64:230,background:C.cardBg,borderRight:`1px solid ${C.g100}`,display:"flex",flexDirection:"column",transition:"width 0.22s ease",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
         <div style={{padding:"18px 14px",borderBottom:`1px solid ${C.g100}`,display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.sageDark},${C.pista})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>🏗️</div>
           {!collapsed&&<div><div style={{fontWeight:800,fontSize:15,color:C.dark}}>BuildPro</div><div style={{fontSize:11,color:C.g400}}>Construction ERP</div></div>}
@@ -2397,10 +2420,61 @@ export default function App(){
         </div>
       </div>
 
-      {/* Main */}
+      {/* Mobile Navigation Drawer Sidebar */}
+      {mobileOpen && (
+        <>
+          <div onClick={() => setMobileOpen(false)} style={{position:"fixed",inset:0,background:"rgba(30,45,36,0.45)",zIndex:999,backdropFilter:"blur(2px)"}} />
+          <div style={{position:"fixed",top:0,left:0,width:250,background:C.cardBg,height:"100vh",display:"flex",flexDirection:"column",zIndex:1000,boxShadow:C.shL,overflowY:"auto"}}>
+            <div style={{padding:"18px 14px",borderBottom:`1px solid ${C.g100}`,display:"flex",alignItems:"center",gap:10,justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.sageDark},${C.pista})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>🏗️</div>
+                <div><div style={{fontWeight:800,fontSize:15,color:C.dark}}>BuildPro</div><div style={{fontSize:11,color:C.g400}}>Construction ERP</div></div>
+              </div>
+              <button onClick={() => setMobileOpen(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.dark}}>✕</button>
+            </div>
+            <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.g100}`}}>
+              <div style={{background:C.pistaPale,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:C.sageDark,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:12}}>{user.name[0]}</div>
+                <div><div style={{fontSize:13,fontWeight:700,color:C.dark}}>{user.name}</div><Bdg s={user.role}/></div>
+              </div>
+            </div>
+            <nav style={{flex:1,padding:"10px 8px"}}>
+              {navItems.map(n=>(
+                <div key={n.id} onClick={()=>{setNav(n.id);setMobileOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 11px",borderRadius:11,marginBottom:2,cursor:"pointer",background:nav===n.id?C.pistaPale:"transparent",color:nav===n.id?C.sageDark:C.g400,fontWeight:nav===n.id?700:500,fontSize:13}}>
+                  <span style={{fontSize:17}}>{n.icon}</span>
+                  <span style={{whiteSpace:"nowrap"}}>{n.label}</span>
+                </div>
+              ))}
+            </nav>
+            <div style={{padding:"10px 8px",borderTop:`1px solid ${C.g100}`}}>
+              <div onClick={async () => { await signOut(auth); setMobileOpen(false); }} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,cursor:"pointer",color:C.red,fontSize:13,fontWeight:600}}>
+                <span>🚪</span>Logout
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Main Container */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
-        <div style={{background:C.cardBg,borderBottom:`1px solid ${C.g100}`,padding:"0 24px",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
+        <div className="main-header" style={{background:C.cardBg,borderBottom:`1px solid ${C.g100}`,padding:"0 24px",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {/* Hamburger Button for Mobile */}
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="hamburger-btn"
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 22,
+                cursor: "pointer",
+                marginRight: 6,
+                color: C.dark,
+                display: "none"
+              }}
+            >
+              ☰
+            </button>
             {nav !== "home" && (
               <button 
                 onClick={handleBack} 
@@ -2459,7 +2533,7 @@ export default function App(){
             <Bdg s={user.role}/>
           </div>
         </div>
-        <div style={{flex:1,overflowY:"auto",padding:24}}>
+        <div className="main-content-container" style={{flex:1,overflowY:"auto",padding:24}}>
           {nav==="home"&&<Home sites={sites} user={user} setNav={setNav} onImportDemo={handleSeedAll}/>}
           {nav==="sites"&&<Sites sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="transactions"&&<Transactions sites={sites}/>}
