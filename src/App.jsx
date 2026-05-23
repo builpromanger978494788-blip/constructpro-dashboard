@@ -432,30 +432,32 @@ function Home({sites,user,setNav,onImportDemo}){
         <StatCard icon="🏗️" label="Total Sites" value={sites.ongoing.length+sites.completed.length} sub={`${sites.ongoing.length} ongoing`} color={C.pista}/>
         <StatCard icon="⚙️" label="Under Process" value={sites.ongoing.length} sub="Active" color={C.blueDeep}/>
         <StatCard icon="✅" label="Completed" value={sites.completed.length} sub="Done" color={C.green}/>
-        <StatCard icon="💰" label="Revenue" value={fmt(rev)} sub="Collected" color={C.gold}/>
+        {user?.role === "Admin" && <StatCard icon="💰" label="Revenue" value={fmt(rev)} sub="Collected" color={C.gold}/>}
         <StatCard icon="📉" label="Expenses" value={fmt(exp)} sub="Spent" color={C.coral}/>
-        <StatCard icon="⏳" label="Pending" value={fmt(pending)} sub="To collect" color={C.orange}/>
+        {user?.role === "Admin" && <StatCard icon="⏳" label="Pending" value={fmt(pending)} sub="To collect" color={C.orange}/>}
         <StatCard icon="👥" label="Clients" value={INIT_CLIENTS.length} sub="Registered" color={C.sage}/>
         <StatCard icon="🧾" label="Vouchers" value={vouchers} sub="Records" color={C.pistaLight}/>
       </div>
-      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:20}}>
-        <Card style={{padding:22}}>
-          <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Monthly Revenue vs Expenses</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={realChartData}>
-              <defs>
-                <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.pista} stopOpacity={0.3}/><stop offset="95%" stopColor={C.pista} stopOpacity={0}/></linearGradient>
-                <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blueDeep} stopOpacity={0.2}/><stop offset="95%" stopColor={C.blueDeep} stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
-              <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
-              <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
-              <Tooltip formatter={v=>fmt(v)} contentStyle={{borderRadius:10,fontSize:13}}/>
-              <Area type="monotone" dataKey="revenue" stroke={C.pista} strokeWidth={2.5} fill="url(#rg)" name="Revenue"/>
-              <Area type="monotone" dataKey="expense" stroke={C.blueDeep} strokeWidth={2} fill="url(#eg)" name="Expense"/>
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:user?.role==="Admin"?"2fr 1fr":"1fr",gap:18,marginBottom:20}}>
+        {user?.role === "Admin" && (
+          <Card style={{padding:22}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Monthly Revenue vs Expenses</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={realChartData}>
+                <defs>
+                  <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.pista} stopOpacity={0.3}/><stop offset="95%" stopColor={C.pista} stopOpacity={0}/></linearGradient>
+                  <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blueDeep} stopOpacity={0.2}/><stop offset="95%" stopColor={C.blueDeep} stopOpacity={0}/></linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
+                <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
+                <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
+                <Tooltip formatter={v=>fmt(v)} contentStyle={{borderRadius:10,fontSize:13}}/>
+                <Area type="monotone" dataKey="revenue" stroke={C.pista} strokeWidth={2.5} fill="url(#rg)" name="Revenue"/>
+                <Area type="monotone" dataKey="expense" stroke={C.blueDeep} strokeWidth={2} fill="url(#eg)" name="Expense"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+        )}
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Expense Split</div>
           <ResponsiveContainer width="100%" height={150}>
@@ -489,7 +491,7 @@ function Home({sites,user,setNav,onImportDemo}){
           <div key={s.id} style={{padding:"14px 22px",borderBottom:`1px solid ${C.g100}`}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
               <div><span style={{fontWeight:700,color:C.dark,fontSize:14}}>{s.name}</span><span style={{fontSize:13,color:C.g400,marginLeft:10}}>{s.client}</span></div>
-              <span style={{fontSize:13,color:C.red,fontWeight:600}}>Pending: {fmt(Math.max(0,s.payment.totalDeal-s.payment.paid))}</span>
+              {user?.role === "Admin" && <span style={{fontSize:13,color:C.red,fontWeight:600}}>Pending: {fmt(Math.max(0,s.payment.totalDeal-s.payment.paid))}</span>}
             </div>
             <ProgBar pct={s.progress} h={9}/>
             <div style={{fontSize:12,color:C.g400,marginTop:4,textAlign:"right"}}>{s.progress}% complete</div>
@@ -497,23 +499,25 @@ function Home({sites,user,setNav,onImportDemo}){
         ))}
       </Card>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:20,marginBottom:20}}>
-        <Card style={{padding:20}}>
-          <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Recent Payments (Clients)</div>
-          {recentPayments.length === 0 ? (
-            <div style={{color:C.g400,fontSize:13,textAlign:"center",padding:20}}>No recent payments</div>
-          ) : (
-            recentPayments.map(p => (
-              <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:14,color:C.dark}}>{p.siteName}</div>
-                  <div style={{fontSize:12,color:C.g400,marginTop:4}}>{p.client} · <Bdg s={p.type}/></div>
+      <div style={{display:"grid",gridTemplateColumns:user?.role === "Admin" ? "repeat(auto-fit,minmax(320px,1fr))" : "1fr",gap:20,marginBottom:20}}>
+        {user?.role === "Admin" && (
+          <Card style={{padding:20}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Recent Payments (Clients)</div>
+            {recentPayments.length === 0 ? (
+              <div style={{color:C.g400,fontSize:13,textAlign:"center",padding:20}}>No recent payments</div>
+            ) : (
+              recentPayments.map(p => (
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14,color:C.dark}}>{p.siteName}</div>
+                    <div style={{fontSize:12,color:C.g400,marginTop:4}}>{p.client} · <Bdg s={p.type}/></div>
+                  </div>
+                  <div style={{fontWeight:600,color:C.green,fontSize:14}}>+{fmt(p.amount)}</div>
                 </div>
-                <div style={{fontWeight:600,color:C.green,fontSize:14}}>+{fmt(p.amount)}</div>
-              </div>
-            ))
-          )}
-        </Card>
+              ))
+            )}
+          </Card>
+        )}
         
         <Card style={{padding:20}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:14}}>Recent Vouchers & Expenses</div>
@@ -732,24 +736,27 @@ function BillsTab({site}){
 }
 
 // ─── SITE DETAIL ──────────────────────────────────────────────
-function SiteDetail({site,onBack,onComplete, sites, materialEntries, labourEntries}){
-  const[main,setMain]=useState("payment");
+function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labourEntries}){
+  const[main,setMain]=useState(user?.role === "Admin" ? "payment" : "expenses");
   const[exp,setExp]=useState("material");
   const[editSite,setEditSite]=useState(false);
   const[siteForm,setSiteForm]=useState({name:site.name,client:site.client,contact:site.contact,address:site.address,startDate:site.startDate,estCompletion:site.estCompletion,progress:site.progress,totalDeal:site.payment.totalDeal});
 
   async function saveSiteEdit(){
     const siteRef = doc(db, "sites", site.id.toString());
-    await updateDoc(siteRef, {
+    const updateData = {
       name: siteForm.name,
       client: siteForm.client,
       contact: siteForm.contact,
       address: siteForm.address,
       startDate: siteForm.startDate,
       estCompletion: siteForm.estCompletion,
-      progress: Number(siteForm.progress),
-      "payment.totalDeal": Number(siteForm.totalDeal)
-    });
+      progress: Number(siteForm.progress)
+    };
+    if (user?.role === "Admin") {
+      updateData["payment.totalDeal"] = Number(siteForm.totalDeal);
+    }
+    await updateDoc(siteRef, updateData);
     setEditSite(false);
   }
 
@@ -781,14 +788,14 @@ function SiteDetail({site,onBack,onComplete, sites, materialEntries, labourEntri
       </Card>
 
       <Tabs tabs={[
-        ["payment","💰 Payment"],
+        ...(user?.role === "Admin" ? [["payment","💰 Payment"]] : []),
         ["expenses","📋 Expenses"],
         ["details","ℹ️ Site Details"],
         ["documents","📁 Documents Vault"],
         ["timeline","🕒 Activity Timeline"]
       ]} active={main} onChange={setMain}/>
 
-      {main==="payment"&&<PayTab site={site}/>}
+      {main==="payment"&&user?.role === "Admin"&&<PayTab site={site}/>}
       {main==="expenses"&&<div>
         <Tabs tabs={[["material","🧱 Material"],["labour","👷 Labour"],["bills","🧾 Bills"]]} active={exp} onChange={setExp}/>
         {exp==="material"&&<MatTab site={site} sites={sites} materialEntries={materialEntries}/>}
@@ -818,9 +825,11 @@ function SiteDetail({site,onBack,onComplete, sites, materialEntries, labourEntri
           <Card style={{padding:22}}>
             <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Detailed Financial Balance</div>
             {[
-              ["Total Construction Deal Value", fmt(site.payment.totalDeal), C.dark],
-              ["Revenue Collected to Date", fmt(site.payment.paid), C.green],
-              ["Outstanding Balance", fmt(Math.max(0, site.payment.totalDeal - site.payment.paid)), C.red],
+              ...(user?.role === "Admin" ? [
+                ["Total Construction Deal Value", fmt(site.payment.totalDeal), C.dark],
+                ["Revenue Collected to Date", fmt(site.payment.paid), C.green],
+                ["Outstanding Balance", fmt(Math.max(0, site.payment.totalDeal - site.payment.paid)), C.red],
+              ] : []),
               ["Materials Expense Spent", fmt(site.expenses.bills.filter(b=>b.type==="Material").reduce((a,b)=>a+b.total,0)), C.orange],
               ["Labour Expense Spent", fmt(site.expenses.bills.filter(b=>b.type==="Labour").reduce((a,b)=>a+b.total,0)), C.blueDeep],
               ["Total Site Expenditure", fmt(site.expenses.bills.reduce((a,b)=>a+b.total,0)), C.red],
@@ -940,7 +949,7 @@ function SiteDetail({site,onBack,onComplete, sites, materialEntries, labourEntri
 }
 
 // ─── SITES MODULE ─────────────────────────────────────────────
-function Sites({sites, materialEntries, labourEntries}){
+function Sites({user, sites, materialEntries, labourEntries}){
   const[tab,setTab]=useState("ongoing");
   const[sel,setSel]=useState(null);
   const[showAdd,setShowAdd]=useState(false);
@@ -963,16 +972,18 @@ function Sites({sites, materialEntries, labourEntries}){
   }, [form]);
 
   async function addSite(){
-    if(!form.name||!form.client||!form.totalDeal)return;
+    if(!form.name||!form.client||(user?.role==="Admin" && !form.totalDeal))return;
     const id = Date.now();
+    const deal = user?.role === "Admin" ? Number(form.totalDeal) : 0;
     await setDoc(doc(db, "sites", id.toString()), {
       id,
       ...form,
+      totalDeal: deal,
       status: "ongoing",
       progress: 0,
       contractorCount: 0,
       materialCost: 0,
-      payment: { totalDeal: Number(form.totalDeal), paid: 0, methods: [] },
+      payment: { totalDeal: deal, paid: 0, methods: [] },
       expenses: { material: [], labour: [], bills: [] }
     });
     localStorage.removeItem("siteAddFormData");
@@ -1006,7 +1017,7 @@ function Sites({sites, materialEntries, labourEntries}){
   if(sel){
     const live=sites.ongoing.find(s=>s.id===sel.id);
     if(!live){setSel(null);return null;}
-    return<SiteDetail site={live} onBack={()=>setSel(null)} onComplete={completeSite} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>;
+    return<SiteDetail user={user} site={live} onBack={()=>setSel(null)} onComplete={completeSite} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>;
   }
 
   return(
@@ -1028,7 +1039,7 @@ function Sites({sites, materialEntries, labourEntries}){
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>👤 {s.client} · 📞 {s.contact}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>📍 {s.address}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:12}}>📅 {s.startDate} → {s.estCompletion}</div>
-                {[["Total Deal",fmt(s.payment.totalDeal)],["Paid",fmt(s.payment.paid)],["Pending",fmt(Math.max(0,rem))]].map(([k,v])=>(
+                {user?.role === "Admin" && [["Total Deal",fmt(s.payment.totalDeal)],["Paid",fmt(s.payment.paid)],["Pending",fmt(Math.max(0,rem))]].map(([k,v])=>(
                   <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.g100}`}}>
                     <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:700,color:C.dark}}>{v}</span>
                   </div>
@@ -1054,16 +1065,26 @@ function Sites({sites, materialEntries, labourEntries}){
       {tab==="completed"&&(
         <div>
           <Card>
-            <Tbl cols={["Site Name","Client","Contact","Address","Total Cost","Timeline","Status","Actions"]}
-              rows={sites.completed.map(s=>[
-                <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>,s.client,s.contact,s.address,
-                <span style={{fontWeight:700,color:C.green}}>{fmt(s.totalCost)}</span>,s.timeline,
-                <Bdg s="Completed"/>,
-                <div style={{display:"flex",gap:6}}>
-                  <Btn small v="secondary" onClick={()=>setEditCompleted({...s})}>✏️</Btn>
-                  <Btn small v="danger" onClick={()=>delCompleted(s.id)}>🗑️</Btn>
-                </div>
-              ])}/>
+            <Tbl cols={
+              user?.role === "Admin"
+                ? ["Site Name","Client","Contact","Address","Total Cost","Timeline","Status","Actions"]
+                : ["Site Name","Client","Contact","Address","Timeline","Status","Actions"]
+            }
+              rows={sites.completed.map(s=>{
+                const cells = [
+                  <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>,s.client,s.contact,s.address
+                ];
+                if (user?.role === "Admin") {
+                  cells.push(<span style={{fontWeight:700,color:C.green}}>{fmt(s.totalCost)}</span>);
+                }
+                cells.push(s.timeline, <Bdg s="Completed"/>,
+                  <div style={{display:"flex",gap:6}}>
+                    <Btn small v="secondary" onClick={()=>setEditCompleted({...s})}>✏️</Btn>
+                    <Btn small v="danger" onClick={()=>delCompleted(s.id)}>🗑️</Btn>
+                  </div>
+                );
+                return cells;
+              })}/>
           </Card>
         </div>
       )}
@@ -1073,7 +1094,7 @@ function Sites({sites, materialEntries, labourEntries}){
           <Fld label="Site Name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
           <Fld label="Client Name *" value={form.client} onChange={e=>setForm({...form,client:e.target.value})}/>
           <Fld label="Contact" value={form.contact} onChange={e=>setForm({...form,contact:e.target.value})}/>
-          <Fld label="Total Deal (₹) *" type="number" value={form.totalDeal} onChange={e=>setForm({...form,totalDeal:e.target.value})}/>
+          {user?.role === "Admin" && <Fld label="Total Deal (₹) *" type="number" value={form.totalDeal} onChange={e=>setForm({...form,totalDeal:e.target.value})}/>}
           <Fld label="Address" value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/>
           <Fld label="Start Date" type="date" value={form.startDate} onChange={e=>setForm({...form,startDate:e.target.value})}/>
           <Fld label="Est. Completion" type="date" value={form.estCompletion} onChange={e=>setForm({...form,estCompletion:e.target.value})}/>
@@ -1085,7 +1106,7 @@ function Sites({sites, materialEntries, labourEntries}){
         <Fld label="Site Name" value={editCompleted.name} onChange={e=>setEditCompleted({...editCompleted,name:e.target.value})}/>
         <Fld label="Client" value={editCompleted.client} onChange={e=>setEditCompleted({...editCompleted,client:e.target.value})}/>
         <Fld label="Contact" value={editCompleted.contact} onChange={e=>setEditCompleted({...editCompleted,contact:e.target.value})}/>
-        <Fld label="Total Cost (₹)" type="number" value={editCompleted.totalCost} onChange={e=>setEditCompleted({...editCompleted,totalCost:Number(e.target.value)})}/>
+        {user?.role === "Admin" && <Fld label="Total Cost (₹)" type="number" value={editCompleted.totalCost} onChange={e=>setEditCompleted({...editCompleted,totalCost:Number(e.target.value)})}/>}
         <Fld label="Timeline" value={editCompleted.timeline} onChange={e=>setEditCompleted({...editCompleted,timeline:e.target.value})}/>
         <div style={{display:"flex",gap:10}}>
           <Btn onClick={async ()=>{await setDoc(doc(db, "sites", editCompleted.id.toString()), { ...editCompleted, status: "completed" });setEditCompleted(null);}}>Update</Btn>
@@ -1538,8 +1559,8 @@ function Ledger({ materialEntries, labourEntries }) {
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────
-function Transactions({sites}){
-  const[tab,setTab]=useState("clients");
+function Transactions({user, sites}){
+  const[tab,setTab]=useState(user?.role === "Admin" ? "clients" : "contractors");
   const[showAdd,setShowAdd]=useState(false);
   const[editTxn,setEditTxn]=useState(null);
   const[txnForm,setTxnForm]=useState({siteId:"",amount:"",type:"Cash",date:""});
@@ -1559,12 +1580,14 @@ function Transactions({sites}){
     setTxnForm({siteId:"",amount:"",type:"Cash",date:""});setShowAdd(false);
   }
 
+  const txTabs = user?.role === "Admin" ? [["clients","👥 Client Payments"],["contractors","👷 Contractor Payments"]] : [["contractors","👷 Contractor Payments"]];
+
   return(
     <div>
-      <Hdr title="Transactions" sub="All payment records" action={<Btn onClick={()=>setShowAdd(true)}>+ Add Payment</Btn>}/>
-      <Tabs tabs={[["clients","👥 Client Payments"],["contractors","👷 Contractor Payments"]]} active={tab} onChange={setTab}/>
+      <Hdr title="Transactions" sub="All payment records" action={user?.role === "Admin" ? <Btn onClick={()=>setShowAdd(true)}>+ Add Payment</Btn> : null}/>
+      <Tabs tabs={txTabs} active={tab} onChange={setTab}/>
 
-      {tab==="clients"&&(
+      {tab==="clients"&&user?.role === "Admin"&&(
         <Card>
           <Tbl cols={["Client","Site","Total Deal","Paid","Unpaid","Extra","Actions"]}
             rows={[...sites.ongoing,...sites.completed].map(s=>{
@@ -1667,7 +1690,7 @@ function Vouchers({materialEntries, labourEntries}){
 }
 
 // ─── CLIENTS ──────────────────────────────────────────────────
-function Clients({clients}){
+function Clients({user, clients}){
   const[search,setSearch]=useState("");
   const[filter,setFilter]=useState("All");
   const[showAdd,setShowAdd]=useState(false);
@@ -1693,12 +1716,13 @@ function Clients({clients}){
 
   async function save(isEdit){
     if(!form.name)return;
+    const totalVal = user?.role === "Admin" ? Number(form.totalValue) : 0;
     if(isEdit){
-      await setDoc(doc(db, "clients", editC.toString()), { ...form, id: editC, totalValue: Number(form.totalValue) });
+      await setDoc(doc(db, "clients", editC.toString()), { ...form, id: editC, totalValue: totalVal });
       setEditC(null);
     } else {
       const id = Date.now();
-      await setDoc(doc(db, "clients", id.toString()), { ...form, id, totalValue: Number(form.totalValue) });
+      await setDoc(doc(db, "clients", id.toString()), { ...form, id, totalValue: totalVal });
       setShowAdd(false);
     }
     localStorage.removeItem("clientAddFormData");
@@ -1727,7 +1751,12 @@ function Clients({clients}){
               <div style={{marginLeft:"auto"}}><Bdg s={c.status}/></div>
             </div>
             <div style={{fontSize:13,color:C.g500,marginBottom:10}}>🏗️ {c.site}</div>
-            {[["Total Value",fmt(c.totalValue)],["Contractor",c.contractor],["Start",c.startDate],["End",c.endDate]].map(([k,v])=>(
+            {[
+              ...(user?.role === "Admin" ? [["Total Value",fmt(c.totalValue)]] : []),
+              ["Contractor",c.contractor],
+              ["Start",c.startDate],
+              ["End",c.endDate]
+            ].map(([k,v])=>(
               <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.g100}`}}>
                 <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:600,color:C.dark}}>{v}</span>
               </div>
@@ -1744,7 +1773,7 @@ function Clients({clients}){
           <Fld label="Name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
           <Fld label="Mobile" value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
           <Fld label="Site" value={form.site} onChange={e=>setForm({...form,site:e.target.value})}/>
-          <Fld label="Total Value (₹)" type="number" value={form.totalValue} onChange={e=>setForm({...form,totalValue:e.target.value})}/>
+          {user?.role === "Admin" && <Fld label="Total Value (₹)" type="number" value={form.totalValue} onChange={e=>setForm({...form,totalValue:e.target.value})}/>}
           <Fld label="Contractor" value={form.contractor} onChange={e=>setForm({...form,contractor:e.target.value})}/>
           <Fld label="Status" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Under Process","Completed"]}/>
           <Fld label="Start Date" type="date" value={form.startDate} onChange={e=>setForm({...form,startDate:e.target.value})}/>
@@ -2535,10 +2564,10 @@ export default function App(){
         </div>
         <div className="main-content-container" style={{flex:1,overflowY:"auto",padding:24}}>
           {nav==="home"&&<Home sites={sites} user={user} setNav={setNav} onImportDemo={handleSeedAll}/>}
-          {nav==="sites"&&<Sites sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
-          {nav==="transactions"&&<Transactions sites={sites}/>}
+          {nav==="sites"&&<Sites user={user} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
+          {nav==="transactions"&&<Transactions user={user} sites={sites}/>}
           {nav==="vouchers"&&<Vouchers materialEntries={materialEntries} labourEntries={labourEntries}/>}
-          {nav==="clients"&&<Clients clients={clients}/>}
+          {nav==="clients"&&<Clients user={user} clients={clients}/>}
           {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites}/>}
           {nav==="add-entry"&&<AddEntry sites={sites}/>}
           {nav==="ledger"&&<Ledger materialEntries={materialEntries} labourEntries={labourEntries}/>}
