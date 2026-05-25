@@ -349,33 +349,21 @@ function Login({onLogin, authError, setAuthError}){
         setLoading(false);
         return setAuthError("Email not registered as Staff. Please contact Admin.");
     }
+    const staffName = qs.empty ? "Unknown Staff" : (qs.docs[0].data().name || "Staff");
 
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
     try {
-      // Using a CORS proxy because Resend API blocks direct frontend requests
-      const res = await fetch('https://corsproxy.io/?https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 
-          'Authorization': 'Bearer re_3Xzouumx_2fcAzbn9E1dVFraWthKK5PdQ', 
-          'Content-Type': 'application/json' 
-        },
-        body: JSON.stringify({
-          from: 'BuildPro Security <onboarding@resend.dev>',
-          to: 'builpromanger978494788@gmail.com', // Routing to Admin to bypass Resend free-tier limits
-          subject: `OTP Request for Staff: ${cleanEmail}`,
-          html: `<p>Staff member (<strong>${cleanEmail}</strong>) is requesting to login.</p><p>Please provide them this OTP: <strong style="font-size:24px">${generatedOtp}</strong></p>`
-        })
+      // Save the OTP to Firebase so the Admin can see it instantly in the dashboard without email delays
+      await setDoc(doc(db, "otp_requests", cleanEmail), {
+        email: cleanEmail,
+        staffName: staffName,
+        otp: generatedOtp,
+        timestamp: Date.now()
       });
-      
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP Error ${res.status}`);
-      }
-      
       setSentOtp(generatedOtp);
     } catch(e) {
       console.error("OTP Error:", e);
-      setAuthError("Failed to send OTP: " + (e.message || "Network/CORS error"));
+      setAuthError("Failed to generate OTP. Check network connection.");
     }
     setLoading(false);
   }
@@ -2478,12 +2466,28 @@ function TrashBin({trashList}) {
 // ─── SECURITY MANAGER ─────────────────────────────────────────
 function SecurityManager() {
   const [devices, setDevices] = useState([]);
+  const [otpRequests, setOtpRequests] = useState([]);
   
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "devices"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
       setDevices(list.sort((a,b) => (b.lastActive||0) - (a.lastActive||0)));
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "otp_requests"), (snapshot) => {
+      const list = [];
+      const now = Date.now();
+      snapshot.forEach(doc => {
+         const data = doc.data();
+         if(now - data.timestamp < 15 * 60 * 1000) { // Only show recent requests (15 mins)
+             list.push({ id: doc.id, ...data });
+         }
+      });
+      setOtpRequests(list.sort((a,b) => b.timestamp - a.timestamp));
     });
     return () => unsub();
   }, []);
@@ -2500,6 +2504,23 @@ function SecurityManager() {
   return (
     <div>
       <Hdr title="Device Security Manager" sub="Manage staff device access and sessions"/>
+      
+      {otpRequests.length > 0 && (
+        <Card style={{marginBottom: 20, background: C.pistaPale}}>
+          <h3 style={{marginBottom: 14, color: C.sageDark, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800}}>
+            <span style={{animation:"spin 2s linear infinite"}}>⏳</span> Live OTP Requests
+          </h3>
+          <Tbl cols={["Staff Name", "Office Email", "OTP Code", "Time"]}
+            rows={otpRequests.map(r => [
+               <span style={{fontWeight:800, color: C.dark}}>{r.staffName}</span>,
+               r.email,
+               <span style={{fontSize: 22, fontWeight: 900, color: C.red, letterSpacing: 2}}>{r.otp}</span>,
+               new Date(r.timestamp).toLocaleTimeString()
+            ])}
+          />
+        </Card>
+      )}
+
       <Card>
         <Tbl cols={["Staff Name", "Office Email", "Device Info", "Status", "Last Active", "Actions"]}
           rows={devices.map(d => [
