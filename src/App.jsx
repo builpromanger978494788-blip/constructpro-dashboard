@@ -65,77 +65,91 @@ const INIT_CLIENTS = [
 
 
 function computeRealChartData(sites) {
-  const targetMonths = [
-    { key: "08", name: "Aug", revenue: 0, expense: 0 },
-    { key: "09", name: "Sep", revenue: 0, expense: 0 },
-    { key: "10", name: "Oct", revenue: 0, expense: 0 },
-    { key: "11", name: "Nov", revenue: 0, expense: 0 },
-    { key: "12", name: "Dec", revenue: 0, expense: 0 },
-    { key: "01", name: "Jan", revenue: 0, expense: 0 },
-    { key: "02", name: "Feb", revenue: 0, expense: 0 },
-    { key: "03", name: "Mar", revenue: 0, expense: 0 }
-  ];
+  const targetMonths = [];
+  const now = new Date();
+  for (let i = 7; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    let mKey = (d.getMonth() + 1).toString();
+    if (mKey.length === 1) mKey = "0" + mKey;
+    targetMonths.push({
+      key: mKey,
+      year: d.getFullYear(),
+      name: d.toLocaleDateString('en-US', { month: 'short' }),
+      revenue: 0,
+      expense: 0
+    });
+  }
 
-  const getMonthKey = (dateStr) => {
+  const getMonthYear = (dateStr) => {
     if (!dateStr) return null;
-    const str = dateStr.toLowerCase();
-    if (str.includes("jan")) return "01";
-    if (str.includes("feb")) return "02";
-    if (str.includes("mar")) return "03";
-    if (str.includes("apr")) return "04";
-    if (str.includes("may")) return "05";
-    if (str.includes("jun")) return "06";
-    if (str.includes("jul")) return "07";
-    if (str.includes("aug")) return "08";
-    if (str.includes("sep")) return "09";
-    if (str.includes("oct")) return "10";
-    if (str.includes("nov")) return "11";
-    if (str.includes("dec")) return "12";
-    
-    const parts = dateStr.split(/[-/]/);
-    if (parts.length >= 2) {
-      const m = parts[1].trim();
-      if (m.length === 2) return m;
-      if (m.length === 1) return "0" + m;
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      let mKey = (d.getMonth() + 1).toString();
+      if (mKey.length === 1) mKey = "0" + mKey;
+      return { key: mKey, year: d.getFullYear() };
     }
-    return null;
+    
+    const str = dateStr.toLowerCase();
+    let key = null;
+    if (str.includes("jan")) key = "01";
+    else if (str.includes("feb")) key = "02";
+    else if (str.includes("mar")) key = "03";
+    else if (str.includes("apr")) key = "04";
+    else if (str.includes("may")) key = "05";
+    else if (str.includes("jun")) key = "06";
+    else if (str.includes("jul")) key = "07";
+    else if (str.includes("aug")) key = "08";
+    else if (str.includes("sep")) key = "09";
+    else if (str.includes("oct")) key = "10";
+    else if (str.includes("nov")) key = "11";
+    else if (str.includes("dec")) key = "12";
+    else {
+      const parts = dateStr.split(/[-/]/);
+      if (parts.length >= 2) {
+        const m = parts[1].trim();
+        if (m.length === 2) key = m;
+        if (m.length === 1) key = "0" + m;
+      }
+    }
+    
+    let year = new Date().getFullYear();
+    const matchYear = dateStr.match(/\b(20\d{2})\b/);
+    if (matchYear) year = parseInt(matchYear[1]);
+
+    return { key, year };
   };
 
   sites.ongoing.forEach(s => {
     if (s.payment && s.payment.methods) {
       s.payment.methods.forEach(m => {
-        const mKey = getMonthKey(m.date);
-        const match = targetMonths.find(t => t.key === mKey);
-        if (match) match.revenue += Number(m.amount) || 0;
+        const dt = getMonthYear(m.date);
+        if (dt && dt.key) {
+          const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+          if (match) match.revenue += Number(m.amount) || 0;
+        }
       });
     }
-    if (s.expenses && s.expenses.material) {
-      s.expenses.material.forEach(mat => {
-        const mKey = getMonthKey(mat.date);
-        const match = targetMonths.find(t => t.key === mKey);
-        if (match) match.expense += Number(mat.advance) || 0;
-      });
-    }
-    if (s.expenses && s.expenses.labour) {
-      s.expenses.labour.forEach(lab => {
-        const mKey = getMonthKey(lab.date || s.startDate);
-        const match = targetMonths.find(t => t.key === mKey);
-        if (match) match.expense += Number(lab.advance) || 0;
-      });
-    }
-    if (s.expenses && s.expenses.bills) {
-      s.expenses.bills.forEach(bill => {
-        const mKey = getMonthKey(bill.date);
-        const match = targetMonths.find(t => t.key === mKey);
-        if (match) match.expense += Number(bill.total) || 0;
-      });
-    }
+    const addExpense = (arr, dateField, amountField) => {
+       if(!arr) return;
+       arr.forEach(item => {
+         const dt = getMonthYear(item[dateField] || s.startDate);
+         if (dt && dt.key) {
+           const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+           if (match) match.expense += Number(item[amountField] || item.total) || 0;
+         }
+       });
+    };
+    addExpense(s.expenses?.material, "date", "advance");
+    addExpense(s.expenses?.labour, "date", "advance");
+    addExpense(s.expenses?.bills, "date", "total");
   });
 
   sites.completed.forEach(s => {
-    const mKey = getMonthKey(s.endDate || s.timeline);
-    const match = targetMonths.find(t => t.key === mKey);
-    if (match) match.revenue += Number(s.totalCost) || 0;
+    const dt = getMonthYear(s.endDate || s.timeline);
+    if (dt && dt.key) {
+       const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+       if (match) match.revenue += Number(s.totalCost) || 0;
+    }
   });
 
   return targetMonths.map(t => ({
@@ -2620,7 +2634,7 @@ export default function App(){
                });
             } else {
                // Fallback gentle sound if notifications are blocked
-               try { const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"); audio.play(); } catch(e){}
+               try { const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2357/2357-preview.mp3"); audio.play(); } catch(e){}
             }
             
             setTimeout(() => setLiveOtpNotify(null), 15000);
