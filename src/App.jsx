@@ -480,12 +480,12 @@ function Login({onLogin, authError, setAuthError}){
   }
 
   return(
-    <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${C.pistaPale} 0%,${C.mintPale} 50%,${C.beige} 100%)`,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{minHeight:"100vh",background:`linear-gradient(135deg, ${C.pistaPale} 0%, ${C.beige} 100%)`,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{display:"flex",background:C.cardBg,borderRadius:24,boxShadow:C.shL,overflow:"hidden",width:"min(860px,100%)",animation:"up 0.5s ease",flexDirection:"row",flexWrap:"wrap"}}>
-        <div style={{flex:1,background:`linear-gradient(160deg,${C.sageDark} 0%,${C.dark} 100%)`,padding:"56px 44px",display:"flex",flexDirection:"column",justifyContent:"center",minWidth:280}}>
+        <div style={{flex:1,background:`linear-gradient(160deg, #436d53 0%, #1a2b21 100%)`,padding:"56px 44px",display:"flex",flexDirection:"column",justifyContent:"center",minWidth:280}}>
           <div style={{fontSize:38,marginBottom:18}}>🏗️</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:"#fff",lineHeight:1.2,marginBottom:12}}>BuildPro<br/><span style={{color:C.pistaLight}}>Manager</span></div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:"#fff",lineHeight:1.2,marginBottom:12}}>BuildPro<br/><span style={{color:"#a8d4b0"}}>Manager</span></div>
           <div style={{fontSize:14,color:"rgba(255, 255, 255, 0.85)",lineHeight:1.7,marginBottom:32,fontWeight:400}}>Construction Management ERP — Sites, clients, contractors & finances.</div>
           {[["🏗️","Multi-site management"],["💰","Real-time financials"],["📊","Advanced analytics"],["👥","Client management"]].map(([ic,t])=>(
             <div key={t} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
@@ -504,7 +504,7 @@ function Login({onLogin, authError, setAuthError}){
           {authError&&<div style={{background:C.coralPale,color:C.red,borderRadius:12,padding:"12px 16px",fontSize:13,marginBottom:20,lineHeight:1.4}}>{authError}</div>}
           
           {mode === "Admin" ? (
-             <button onClick={goGoogle} disabled={loading} style={{background:`linear-gradient(90deg,${C.sageDark},${C.pista})`,color:"#fff",border:"none",borderRadius:12,padding:"14px 0",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+             <button onClick={goGoogle} disabled={loading} style={{background:`linear-gradient(90deg, #5a8a6a, #436d53)`,color:"#fff",border:"none",borderRadius:12,padding:"14px 0",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
                {loading ? <div style={{width:20,height:20,border:"2px solid #ffffff40",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/> : <>
                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
