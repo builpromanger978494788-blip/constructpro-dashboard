@@ -518,6 +518,9 @@ function Login({onLogin, authError, setAuthError}){
                  </>
                ) : (
                  <>
+                   <div style={{fontSize: 13, color: C.g500, marginBottom: 15, textAlign: "center", background: C.pistaPale, padding: "8px 12px", borderRadius: 8}}>
+                     OTP has been sent to the Admin Dashboard. <br/><strong style={{color: C.sageDark}}>Please ask the Admin to provide the 6-digit OTP.</strong>
+                   </div>
                    <Fld label="Enter 6-digit OTP" placeholder="123456" value={otp} onChange={e=>setOtp(e.target.value)} />
                    <Btn full onClick={handleVerifyOTP} disabled={loading}>{loading ? "Verifying..." : "Verify OTP & Login"}</Btn>
                    <div style={{textAlign:"center", marginTop:14}}>
