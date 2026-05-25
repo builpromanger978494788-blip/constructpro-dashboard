@@ -295,7 +295,136 @@ function Hdr({title,sub,action}){
 
 // ─── LOGIN ────────────────────────────────────────────────────
 function Login({onLogin, authError, setAuthError}){
+  const[mode,setMode]=useState("Admin");
   const[loading,setLoading]=useState(false);
+  const[staffEmail, setStaffEmail]=useState("");
+  const[otp, setOtp]=useState("");
+  const[sentOtp, setSentOtp]=useState(null);
+  const[pendingDevice, setPendingDevice]=useState(null);
+
+  useEffect(() => {
+     let interval;
+     if(pendingDevice) {
+        interval = setInterval(async () => {
+           const dSnap = await getDoc(doc(db, "devices", pendingDevice));
+           if(dSnap.exists()) {
+             if(dSnap.data().status === "approved") {
+                completeStaffLogin(pendingDevice, staffEmail);
+             } else if(dSnap.data().status === "rejected") {
+                setAuthError("Device login rejected by Admin.");
+                setPendingDevice(null);
+                setSentOtp(null);
+             }
+           }
+        }, 3000);
+     }
+     return () => clearInterval(interval);
+  }, [pendingDevice, staffEmail]);
+
+  async function completeStaffLogin(deviceId, email) {
+      localStorage.setItem("staffSession", JSON.stringify({deviceId, email}));
+      const q = query(collection(db, "users"), where("email", "==", email));
+      const qs = await getDocs(q);
+      let userData = { role: "Staff", name: "Staff User" };
+      if(!qs.empty) userData = qs.docs[0].data();
+      onLogin({
+        uid: deviceId,
+        email: email,
+        name: userData.name || "Staff",
+        role: userData.role || "Staff",
+        isStaffSession: true
+      });
+  }
+
+  async function handleSendOTP() {
+    if(!staffEmail) return setAuthError("Please enter Office Gmail.");
+    setLoading(true);
+    setAuthError("");
+    
+    // Check if staff email is registered in Users collection
+    const cleanEmail = staffEmail.trim().toLowerCase();
+    const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+    const qs = await getDocs(q);
+    if(qs.empty && cleanEmail !== "builpromanger978494788@gmail.com") {
+        setLoading(false);
+        return setAuthError("Email not registered as Staff. Please contact Admin.");
+    }
+
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    try {
+      // Using a CORS proxy because Resend API blocks direct frontend requests
+      const res = await fetch('https://corsproxy.io/?https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 
+          'Authorization': 'Bearer re_3Xzouumx_2fcAzbn9E1dVFraWthKK5PdQ', 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({
+          from: 'BuildPro Security <onboarding@resend.dev>',
+          to: 'builpromanger978494788@gmail.com', // Routing to Admin to bypass Resend free-tier limits
+          subject: `OTP Request for Staff: ${cleanEmail}`,
+          html: `<p>Staff member (<strong>${cleanEmail}</strong>) is requesting to login.</p><p>Please provide them this OTP: <strong style="font-size:24px">${generatedOtp}</strong></p>`
+        })
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP Error ${res.status}`);
+      }
+      
+      setSentOtp(generatedOtp);
+    } catch(e) {
+      console.error("OTP Error:", e);
+      setAuthError("Failed to send OTP: " + (e.message || "Network/CORS error"));
+    }
+    setLoading(false);
+  }
+
+  async function handleVerifyOTP() {
+    if(otp !== sentOtp) return setAuthError("Invalid OTP.");
+    setLoading(true);
+    setAuthError("");
+    
+    const cleanEmail = staffEmail.trim().toLowerCase();
+    let deviceId = localStorage.getItem("buildpro_deviceId");
+    if(!deviceId) {
+      deviceId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+      localStorage.setItem("buildpro_deviceId", deviceId);
+    }
+
+    const ua = navigator.userAgent;
+    let browser = "Unknown"; if(ua.includes("Chrome")) browser = "Chrome"; else if(ua.includes("Firefox")) browser = "Firefox"; else if(ua.includes("Safari")) browser = "Safari";
+    let os = "Unknown"; if(ua.includes("Win")) os = "Windows"; else if(ua.includes("Mac")) os = "MacOS"; else if(ua.includes("Linux")) os = "Linux"; else if(ua.includes("Android")) os = "Android"; else if(ua.includes("like Mac")) os = "iOS";
+    const deviceInfo = `${os} - ${browser}`;
+
+    const dRef = doc(db, "devices", deviceId);
+    const dSnap = await getDoc(dRef);
+    if(dSnap.exists() && dSnap.data().email === cleanEmail) {
+       if(dSnap.data().status === "approved") {
+          completeStaffLogin(deviceId, cleanEmail);
+       } else {
+          setPendingDevice(deviceId);
+       }
+    } else {
+       const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+       const qs = await getDocs(q);
+       const staffName = qs.empty ? "Unknown Staff" : (qs.docs[0].data().name || "Staff");
+
+       await setDoc(dRef, {
+         id: deviceId,
+         email: cleanEmail,
+         staffName: staffName,
+         deviceInfo,
+         status: "pending",
+         lastActive: Date.now()
+       });
+       setPendingDevice(deviceId);
+    }
+    setLoading(false);
+  }
 
   async function goGoogle(){
     setLoading(true);
@@ -335,14 +464,12 @@ function Login({onLogin, authError, setAuthError}){
         }
       }
     } catch(err) {
-      console.error(err);
       if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request") {
         setAuthError("Popup blocked. Redirecting to Google Login page...");
         try {
           await signInWithRedirect(auth, provider);
         } catch (redirectErr) {
-          console.error(redirectErr);
-          setAuthError(redirectErr.message || "Failed to redirect to Google Login.");
+          setAuthError(redirectErr.message || "Failed to redirect.");
         }
       } else {
         setAuthError(err.message || "Failed to log in with Google.");
@@ -367,26 +494,51 @@ function Login({onLogin, authError, setAuthError}){
           ))}
         </div>
         <div style={{flex:1,padding:"56px 44px",display:"flex",flexDirection:"column",justifyContent:"center",minWidth:280}}>
-          <div style={{fontSize:26,fontWeight:800,color:C.dark,marginBottom:6}}>Welcome back 👋</div>
-          <div style={{fontSize:14,color:C.g400,marginBottom:30}}>Sign in to your dashboard using Google</div>
+          <Tabs tabs={[["Admin","Admin Login"],["Staff","Staff Login"]]} active={mode} onChange={setMode}/>
+          
+          <div style={{fontSize:26,fontWeight:800,color:C.dark,marginBottom:6,marginTop:20}}>Welcome back 👋</div>
+          <div style={{fontSize:14,color:C.g400,marginBottom:30}}>
+             {mode==="Admin" ? "Sign in to your dashboard using Google" : "Login with your Office Gmail and OTP"}
+          </div>
           
           {authError&&<div style={{background:C.coralPale,color:C.red,borderRadius:12,padding:"12px 16px",fontSize:13,marginBottom:20,lineHeight:1.4}}>{authError}</div>}
           
-          <button onClick={goGoogle} disabled={loading} style={{background:`linear-gradient(90deg,${C.sageDark},${C.pista})`,color:"#fff",border:"none",borderRadius:12,padding:"14px 0",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            {loading ? (
-              <div style={{width:20,height:20,border:"2px solid #ffffff40",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-            ) : (
-              <>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                </svg>
-                <span>Sign In with Google</span>
-              </>
-            )}
-          </button>
+          {mode === "Admin" ? (
+             <button onClick={goGoogle} disabled={loading} style={{background:`linear-gradient(90deg,${C.sageDark},${C.pista})`,color:"#fff",border:"none",borderRadius:12,padding:"14px 0",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+               {loading ? <div style={{width:20,height:20,border:"2px solid #ffffff40",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/> : <>
+                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                   <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                   <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                 </svg>
+                 <span>Sign In with Google</span>
+               </>}
+             </button>
+          ) : (
+             <div>
+               {pendingDevice ? (
+                  <div style={{background:C.bluePale, padding:20, borderRadius:12, textAlign:"center"}}>
+                     <div style={{fontSize:40, marginBottom:10}}>⏳</div>
+                     <div style={{fontWeight:700, color:C.blueDeep, fontSize:16, marginBottom:5}}>OTP verified!</div>
+                     <div style={{fontSize:13, color:C.g600, lineHeight:1.5}}>Device is now awaiting Admin Approval. Please ask Admin to approve this device from the dashboard.</div>
+                  </div>
+               ) : !sentOtp ? (
+                 <>
+                   <Fld label="Office Gmail" placeholder="staff@example.com" value={staffEmail} onChange={e=>setStaffEmail(e.target.value)} />
+                   <Btn full onClick={handleSendOTP} disabled={loading}>{loading ? "Sending..." : "Send OTP"}</Btn>
+                 </>
+               ) : (
+                 <>
+                   <Fld label="Enter 6-digit OTP" placeholder="123456" value={otp} onChange={e=>setOtp(e.target.value)} />
+                   <Btn full onClick={handleVerifyOTP} disabled={loading}>{loading ? "Verifying..." : "Verify OTP & Login"}</Btn>
+                   <div style={{textAlign:"center", marginTop:14}}>
+                     <span style={{fontSize:13, color:C.sageDark, cursor:"pointer", fontWeight:600}} onClick={()=>setSentOtp(null)}>← Use different email</span>
+                   </div>
+                 </>
+               )}
+             </div>
+          )}
         </div>
       </div>
     </div>
@@ -2323,6 +2475,53 @@ function TrashBin({trashList}) {
   );
 }
 
+// ─── SECURITY MANAGER ─────────────────────────────────────────
+function SecurityManager() {
+  const [devices, setDevices] = useState([]);
+  
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "devices"), (snapshot) => {
+      const list = [];
+      snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+      setDevices(list.sort((a,b) => (b.lastActive||0) - (a.lastActive||0)));
+    });
+    return () => unsub();
+  }, []);
+
+  async function updateStatus(id, status) {
+    await updateDoc(doc(db, "devices", id), { status });
+  }
+
+  async function deleteDevice(id) {
+    if(!confirm("Are you sure you want to remove this device? Staff will need to login and verify OTP again.")) return;
+    await deleteDoc(doc(db, "devices", id));
+  }
+
+  return (
+    <div>
+      <Hdr title="Device Security Manager" sub="Manage staff device access and sessions"/>
+      <Card>
+        <Tbl cols={["Staff Name", "Office Email", "Device Info", "Status", "Last Active", "Actions"]}
+          rows={devices.map(d => [
+            <span style={{fontWeight:800, color:C.sageDark}}>{d.staffName || "Unknown"}</span>,
+            <span style={{fontWeight:700, color:C.dark}}>{d.email}</span>,
+            <span style={{fontSize:13, color:C.g600}}>{d.deviceInfo}</span>,
+            <span style={{padding:"4px 10px", borderRadius:20, fontSize:12, fontWeight:700, background: d.status==="approved"?"#e8f5e9":d.status==="pending"?"#fff8e1":"#fdecea", color: d.status==="approved"?C.green:d.status==="pending"?C.gold:C.red}}>{d.status?.toUpperCase()}</span>,
+            <span style={{fontSize:12, color:C.g400}}>{d.lastActive ? new Date(d.lastActive).toLocaleString() : ""}</span>,
+            <div style={{display:"flex", gap:6}}>
+               {d.status === "pending" && <Btn small onClick={()=>updateStatus(d.id, "approved")}>✅ Approve</Btn>}
+               {d.status === "pending" && <Btn small v="danger" onClick={()=>updateStatus(d.id, "rejected")}>❌ Reject</Btn>}
+               {d.status === "approved" && <Btn small v="secondary" onClick={()=>updateStatus(d.id, "rejected")}>🔒 Lock</Btn>}
+               {d.status === "rejected" && <Btn small onClick={()=>updateStatus(d.id, "approved")}>🔓 Unlock</Btn>}
+               <Btn small v="danger" onClick={()=>deleteDevice(d.id)}>🗑️ Remove</Btn>
+            </div>
+          ])}
+        />
+      </Card>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────
 export default function App(){
   const[user,setUser]=useState(null);
@@ -2363,37 +2562,37 @@ export default function App(){
       if (firebaseUser) {
         const email = firebaseUser.email.toLowerCase();
         if (email === "builpromanger978494788@gmail.com") {
-          setUser({
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || "Super Admin",
-            email: firebaseUser.email,
-            role: "Admin",
-            isSuperAdmin: true,
-            photoURL: firebaseUser.photoURL || ""
-          });
+          setUser({ uid: firebaseUser.uid, name: firebaseUser.displayName || "Super Admin", email: firebaseUser.email, role: "Admin", isSuperAdmin: true, photoURL: firebaseUser.photoURL || "" });
         } else {
           const q = query(collection(db, "users"), where("email", "==", email));
           const querySnapshot = await getDocs(q);
           if (!querySnapshot.empty) {
-            const docId = querySnapshot.docs[0].id;
-            const userData = querySnapshot.docs[0].data();
-            setUser({
-              uid: firebaseUser.uid,
-              id: docId,
-              name: userData.name || firebaseUser.displayName || "User",
-              email: firebaseUser.email,
-              phone: userData.phone || "",
-              username: userData.username || "",
-              photoURL: userData.image || firebaseUser.photoURL || "",
-              role: userData.role || "Staff"
-            });
+            const docId = querySnapshot.docs[0].id; const userData = querySnapshot.docs[0].data();
+            setUser({ uid: firebaseUser.uid, id: docId, name: userData.name || firebaseUser.displayName || "User", email: firebaseUser.email, phone: userData.phone || "", username: userData.username || "", photoURL: userData.image || firebaseUser.photoURL || "", role: userData.role || "Staff" });
           } else {
-            setUser(null);
-            await signOut(auth);
-            setAuthError("Access Denied: Your email is not registered in this system. Please contact the Admin.");
+            setUser(null); await signOut(auth); setAuthError("Access Denied: Your email is not registered in this system. Please contact the Admin.");
           }
         }
       } else {
+        const staffSessionStr = localStorage.getItem("staffSession");
+        if (staffSessionStr) {
+          try {
+            const session = JSON.parse(staffSessionStr);
+            const dRef = doc(db, "devices", session.deviceId);
+            const dSnap = await getDoc(dRef);
+            if (dSnap.exists() && dSnap.data().status === "approved" && dSnap.data().email === session.email) {
+               const q = query(collection(db, "users"), where("email", "==", session.email));
+               const qs = await getDocs(q);
+               let userData = { role: "Staff", name: "Staff User" };
+               if(!qs.empty) userData = qs.docs[0].data();
+               setUser({ uid: session.deviceId, email: session.email, name: userData.name || "Staff", role: userData.role || "Staff", isStaffSession: true });
+               setAuthLoading(false);
+               return;
+            } else {
+               localStorage.removeItem("staffSession");
+            }
+          } catch(e){}
+        }
         setUser(null);
       }
       setAuthLoading(false);
@@ -2501,6 +2700,7 @@ export default function App(){
     {id:"add-entry",icon:"➕",label:"Add Entry"},
     {id:"ledger",icon:"📖",label:"Ledger"},
     ...(user?.role==="Admin"?[{id:"users",icon:"👤",label:"Users"}]:[]),
+    ...(user?.role==="Admin"?[{id:"security",icon:"🔐",label:"Security"}]:[]),
     {id:"settings",icon:"⚙️",label:"Settings"},
     {id:"trash",icon:"🗑️",label:"Recycle Bin"},
   ];
@@ -2724,7 +2924,7 @@ export default function App(){
             onMouseEnter={e=>e.currentTarget.style.background=C.g100} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
             <span>{collapsed?"▶":"◀"}</span>{!collapsed&&"Collapse"}
           </div>
-          <div onClick={async () => await signOut(auth)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,cursor:"pointer",color:C.red,fontSize:13,fontWeight:600}}
+          <div onClick={async () => { if(user?.isStaffSession){localStorage.removeItem("staffSession");setUser(null);}else{await signOut(auth);} }} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,cursor:"pointer",color:C.red,fontSize:13,fontWeight:600}}
             onMouseEnter={e=>e.currentTarget.style.background=C.coralPale} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
             <span>🚪</span>{!collapsed&&"Logout"}
           </div>
@@ -2758,7 +2958,7 @@ export default function App(){
               ))}
             </nav>
             <div style={{padding:"10px 8px",borderTop:`1px solid ${C.g100}`}}>
-              <div onClick={async () => { await signOut(auth); setMobileOpen(false); }} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,cursor:"pointer",color:C.red,fontSize:13,fontWeight:600}}>
+              <div onClick={async () => { if(user?.isStaffSession){localStorage.removeItem("staffSession");setUser(null);}else{await signOut(auth);} setMobileOpen(false); }} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,cursor:"pointer",color:C.red,fontSize:13,fontWeight:600}}>
                 <span>🚪</span>Logout
               </div>
             </div>
@@ -2854,6 +3054,7 @@ export default function App(){
           {nav==="add-entry"&&<AddEntry sites={sites}/>}
           {nav==="ledger"&&<Ledger materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="users"&&user.role==="Admin"&&<UsersSection users={usersList}/>}
+          {nav==="security"&&user.role==="Admin"&&<SecurityManager/>}
           {nav==="settings"&&<Settings user={user} onUpdateUser={setUser}/>}
           {nav==="trash"&&<TrashBin trashList={trashList}/>}
         </div>
