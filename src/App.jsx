@@ -2599,13 +2599,30 @@ export default function App(){
 
   useEffect(() => {
     if (user?.role !== "Admin") return;
+    
+    // Request PC Notification Permission
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
     const unsub = onSnapshot(collection(db, "otp_requests"), (snapshot) => {
       snapshot.docChanges().forEach(change => {
         if (change.type === "added" || change.type === "modified") {
           const data = change.doc.data();
           if (Date.now() - data.timestamp < 10000) { 
             setLiveOtpNotify(data);
-            try { const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); audio.play(); } catch(e){}
+            
+            // Show Native PC Notification (plays beautiful default OS sound)
+            if ("Notification" in window && Notification.permission === "granted") {
+               new Notification(`New OTP: ${data.otp}`, {
+                 body: `${data.staffName} is requesting to login.`,
+                 icon: "https://cdn-icons-png.flaticon.com/512/2910/2910763.png" // Lock/Security icon
+               });
+            } else {
+               // Fallback gentle sound if notifications are blocked
+               try { const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"); audio.play(); } catch(e){}
+            }
+            
             setTimeout(() => setLiveOtpNotify(null), 15000);
           }
         }
