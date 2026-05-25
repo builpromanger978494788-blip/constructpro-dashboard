@@ -2479,16 +2479,18 @@ function TrashBin({trashList}) {
 function SecurityManager() {
   const [devices, setDevices] = useState([]);
   const [otpRequests, setOtpRequests] = useState([]);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t=>t+1), 5000); // refresh every 5s to prune expired OTPs
+    return () => clearInterval(timer);
+  }, []);
   
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "otp_requests"), (snapshot) => {
       const list = [];
-      const now = Date.now();
       snapshot.forEach(doc => {
-         const data = doc.data();
-         if(now - data.timestamp < 15 * 60 * 1000) { // Only show recent requests (15 mins)
-             list.push({ id: doc.id, ...data });
-         }
+         list.push({ id: doc.id, ...doc.data() });
       });
       setOtpRequests(list.sort((a,b) => b.timestamp - a.timestamp));
     });
@@ -2517,21 +2519,25 @@ function SecurityManager() {
     <div>
       <Hdr title="Device Security Manager" sub="Manage staff device access and sessions"/>
       
-      {otpRequests.length > 0 && (
-        <Card style={{marginBottom: 20, background: C.pistaPale}}>
-          <h3 style={{marginBottom: 14, color: C.sageDark, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800}}>
-            <span style={{animation:"spin 2s linear infinite"}}>⏳</span> Live OTP Requests
-          </h3>
-          <Tbl cols={["Staff Name", "Office Email", "OTP Code", "Time"]}
-            rows={otpRequests.map(r => [
-               <span style={{fontWeight:800, color: C.dark}}>{r.staffName}</span>,
-               r.email,
-               <span style={{fontSize: 22, fontWeight: 900, color: C.red, letterSpacing: 2}}>{r.otp}</span>,
-               new Date(r.timestamp).toLocaleTimeString()
-            ])}
-          />
-        </Card>
-      )}
+      {(() => {
+        const validRequests = otpRequests.filter(r => Date.now() - r.timestamp < 2 * 60 * 1000);
+        if (validRequests.length === 0) return null;
+        return (
+          <Card style={{marginBottom: 20, background: C.pistaPale}}>
+            <h3 style={{marginBottom: 14, color: C.sageDark, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800}}>
+              <span style={{animation:"spin 2s linear infinite"}}>⏳</span> Live OTP Requests (Expires in 2 mins)
+            </h3>
+            <Tbl cols={["Staff Name", "Office Email", "OTP Code", "Time"]}
+              rows={validRequests.map(r => [
+                 <span style={{fontWeight:800, color: C.dark}}>{r.staffName}</span>,
+                 r.email,
+                 <span style={{fontSize: 22, fontWeight: 900, color: C.red, letterSpacing: 2}}>{r.otp}</span>,
+                 new Date(r.timestamp).toLocaleTimeString()
+              ])}
+            />
+          </Card>
+        );
+      })()}
 
       <Card>
         <Tbl cols={["Staff Name", "Office Email", "Device Info", "Status", "Last Active", "Actions"]}
@@ -2589,6 +2595,24 @@ export default function App(){
   const[trashList,setTrashList]=useState([]);
   const[collapsed,setCollapsed]=useState(false);
   const[mobileOpen,setMobileOpen]=useState(false);
+  const[liveOtpNotify,setLiveOtpNotify]=useState(null);
+
+  useEffect(() => {
+    if (user?.role !== "Admin") return;
+    const unsub = onSnapshot(collection(db, "otp_requests"), (snapshot) => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === "added" || change.type === "modified") {
+          const data = change.doc.data();
+          if (Date.now() - data.timestamp < 10000) { 
+            setLiveOtpNotify(data);
+            try { const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); audio.play(); } catch(e){}
+            setTimeout(() => setLiveOtpNotify(null), 15000);
+          }
+        }
+      });
+    });
+    return () => unsub();
+  }, [user]);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -3092,6 +3116,19 @@ export default function App(){
           {nav==="trash"&&<TrashBin trashList={trashList}/>}
         </div>
       </div>
+      
+      {liveOtpNotify && (
+        <div style={{position:"fixed", bottom: 20, right: 20, background: C.cardBg, border: `2px solid ${C.pista}`, borderRadius: 12, padding: "16px 20px", boxShadow: C.shL, zIndex: 9999, animation: "up 0.5s ease", display: "flex", alignItems: "center", gap: 15, cursor: "pointer"}} onClick={() => { setLiveOtpNotify(null); setNav("security"); }}>
+           <div style={{fontSize: 24}}>🔐</div>
+           <div>
+              <div style={{fontWeight: 800, color: C.dark, fontSize: 15, marginBottom: 2}}>New OTP Request!</div>
+              <div style={{fontSize: 13, color: C.g500}}>Staff: <span style={{fontWeight:700}}>{liveOtpNotify.staffName}</span></div>
+              <div style={{fontSize: 22, fontWeight: 900, color: C.red, letterSpacing: 2, marginTop: 4}}>{liveOtpNotify.otp}</div>
+           </div>
+           <button onClick={(e)=>{e.stopPropagation();setLiveOtpNotify(null)}} style={{background:"transparent", border:"none", position:"absolute", top: 10, right: 10, cursor:"pointer", color:C.g400, fontSize:16}}>✕</button>
+        </div>
+      )}
+      
     </div>
   );
 }
