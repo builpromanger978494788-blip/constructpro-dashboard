@@ -362,16 +362,11 @@ function Login({onLogin, authError, setAuthError}){
         timestamp: Date.now()
       });
 
-      // 2. Attempt to send via Resend (might fail in production due to CORS proxy limits, but we catch it)
-      fetch('https://thingproxy.freeboard.io/fetch/https://api.resend.com/emails', {
+      // 2. Attempt to send via Vercel Serverless API (Secure & No CORS issues)
+      fetch('/api/send-otp', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer re_3Xzouumx_2fcAzbn9E1dVFraWthKK5PdQ', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: 'BuildPro Security <onboarding@resend.dev>',
-          to: 'builpromanger978494788@gmail.com',
-          subject: `OTP Request for Staff: ${cleanEmail}`,
-          html: `<p>Staff member (<strong>${cleanEmail}</strong>) is requesting to login.</p><p>Please provide them this OTP: <strong style="font-size:24px">${generatedOtp}</strong></p>`
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, otp: generatedOtp })
       }).catch(e => console.warn("Email proxy failed, but OTP is saved in dashboard.", e));
       
       setSentOtp(generatedOtp);
