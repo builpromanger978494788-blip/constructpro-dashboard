@@ -363,7 +363,7 @@ function Login({onLogin, authError, setAuthError}){
       });
 
       // 2. Attempt to send via Resend (might fail in production due to CORS proxy limits, but we catch it)
-      fetch('https://corsproxy.io/?https://api.resend.com/emails', {
+      fetch('https://thingproxy.freeboard.io/fetch/https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer re_3Xzouumx_2fcAzbn9E1dVFraWthKK5PdQ', 'Content-Type': 'application/json' },
         body: JSON.stringify({
