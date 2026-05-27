@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db, auth, provider, storage } from "./firebase";
+
+
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch, query, where, getDocs, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -239,7 +241,7 @@ function StatCard({icon,label,value,sub,color}){
 }
 function Btn({children,onClick,v="primary",small,full}){
   const st={primary:{background:C.sageDark,color:"var(--btnPrimaryText)",border:"none"},secondary:{background:C.pistaPale,color:C.sageDark,border:`1.5px solid ${C.pistaLight}`},ghost:{background:"transparent",color:C.g500,border:`1.5px solid ${C.g200}`},danger:{background:C.coralPale,color:C.red,border:"none"},blue:{background:C.bluePale,color:C.blueDeep,border:"none"}};
-  return<button onClick={onClick} style={{...st[v],borderRadius:10,padding:small?"6px 14px":"10px 20px",fontSize:small?12:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.15s",whiteSpace:"nowrap",width:full?"100%":"auto",justifyContent:full?"center":"flex-start"}}>{children}</button>;
+  return<button className="btn-press" onClick={onClick} style={{...st[v],borderRadius:10,padding:small?"6px 14px":"10px 20px",fontSize:small?12:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"transform 0.1s, opacity 0.1s, background 0.15s",whiteSpace:"nowrap",width:full?"100%":"auto",justifyContent:full?"center":"flex-start"}}>{children}</button>;
 }
 function Modal({title,children,onClose,w=520}){
   return(
@@ -260,6 +262,7 @@ function Fld({label,value,onChange,type="text",placeholder,as="input",options,di
     <div style={{marginBottom:14}}>
       {label&&<div style={{fontSize:12,color:C.g500,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>}
       {as==="select"?<select value={value} onChange={onChange} style={base} disabled={disabled}>{options?.map(o=><option key={o}>{o}</option>)}</select>
+      :as==="textarea"?<textarea value={value} onChange={onChange} placeholder={placeholder} style={{...base, minHeight:100, resize:"vertical"}} disabled={disabled} />
       :<input type={type} value={value} onChange={onChange} placeholder={placeholder} style={base} disabled={disabled}/>}
     </div>
   );
@@ -2621,6 +2624,467 @@ function SecurityManager() {
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────
+
+function ImgUpload({ value, onUpload, onRemove, width = 100 }) {
+  const [uploading, setUploading] = useState(false);
+  return (
+    <div style={{ marginBottom: 15 }}>
+      {value && (
+        <div style={{ position: "relative", display: "inline-block", marginBottom: 10 }}>
+          <img src={value} width={width} style={{ borderRadius: 8, display: "block", objectFit: "cover" }} />
+          {onRemove && (
+            <button onClick={onRemove} style={{ position: "absolute", top: -8, right: -8, background: "#ef4444", color: "white", border: "none", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }} title="Remove Image">✕</button>
+          )}
+        </div>
+      )}
+      <div>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: uploading ? C.g200 : C.pistaPale, color: uploading ? C.g500 : C.sageDark, borderRadius: 10, fontWeight: 600, cursor: uploading ? "not-allowed" : "pointer", fontSize: 13, border: `1.5px solid ${uploading ? C.g300 : C.pistaLight}`, transition: "all 0.2s" }} className={!uploading ? "btn-press" : ""}>
+          {uploading ? "⏳ Uploading..." : "⬆️ Upload Image"}
+          <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={async e => {
+            if (!e.target.files[0]) return;
+            setUploading(true);
+            try {
+              await onUpload(e.target.files[0]);
+            } finally {
+              setUploading(false);
+            }
+          }} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ─── WEBSITE CMS & ADMIN TABS ──────────────────────────────────
+function WebsiteCMS() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("brand");
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "website_content", "main"), (docSnap) => {
+      if (docSnap.exists()) {
+        setData(docSnap.data());
+      }
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const handleUpdate = async (keyOrObj, value) => {
+    if(!confirm("Kya aap sach me in changes ko save karna chahte hain?")) return;
+    try {
+      const payload = typeof keyOrObj === "string" ? { [keyOrObj]: value } : keyOrObj;
+      await updateDoc(doc(db, "website_content", "main"), payload);
+      alert("Changes saved successfully!");
+    } catch(e) { alert("Update failed"); }
+  };
+
+  const uploadImage = async (file, path) => {
+    if (!file) return null;
+    const imageRef = ref(storage, "website/" + Date.now() + "_" + file.name);
+    await uploadBytes(imageRef, file);
+    return await getDownloadURL(imageRef);
+  };
+
+  if (loading) return <div style={{padding:20}}>Loading CMS...</div>;
+  if (!data) return <div style={{padding:20}}>No Website Data Found. Run Seeder.</div>;
+
+  return (
+    <div>
+      <Hdr title="Website CMS" sub="Manage public website content directly." />
+      
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        {["brand","hero","about","directors","staff","services","portfolio","faq"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{padding:"10px 18px",borderRadius:12,border:`1.5px solid ${tab===t?C.sageDark:C.g200}`,background:tab===t?C.pistaPale:"#fff",color:tab===t?C.sageDark:C.g500,fontWeight:700,cursor:"pointer",fontSize:14,transition:"all 0.2s"}} className="btn-press">
+            {t === "brand" && "🏢 Brand"}
+            {t === "hero" && "🖼️ Hero"}
+            {t === "about" && "ℹ️ About"}
+            {t === "directors" && "👔 Directors"}
+            {t === "staff" && "👷 Staff"}
+            {t === "services" && "🛠️ Services"}
+            {t === "portfolio" && "🏗️ Projects"}
+            {t === "faq" && "❓ FAQs"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "brand" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>Brand & Header</div>
+          <Fld label="Brand Name" value={data.brandName} onChange={e => setData({...data, brandName: e.target.value})} />
+          <div style={{marginBottom: 15}}>
+            <label style={{display:"block",marginBottom:5,fontWeight:600,fontSize:14,color:C.g700}}>Brand Logo</label>
+            <ImgUpload value={data.brandLogo} width={150} onUpload={async f => {
+              const url = await uploadImage(f);
+              if(url) setData({...data, brandLogo: url});
+            }} />
+          </div>
+          <Btn onClick={() => handleUpdate({brandName: data.brandName, brandLogo: data.brandLogo})}>Save Brand Details</Btn>
+        </Card>
+      )}
+
+      {tab === "hero" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>Hero Section</div>
+          <Fld label="Badge Text" value={data.hero?.badge||""} onChange={e => setData({...data, hero: {...data.hero, badge: e.target.value}})} />
+          <Fld label="Title" value={data.hero?.title||""} onChange={e => setData({...data, hero: {...data.hero, title: e.target.value}})} />
+          <Fld label="Description" as="textarea" rows={3} value={data.hero?.description||""} onChange={e => setData({...data, hero: {...data.hero, description: e.target.value}})} />
+          <ImgUpload value={data.hero?.imageUrl} width={200} onUpload={async f => {
+            const url = await uploadImage(f);
+            if(url) setData({...data, hero: {...data.hero, imageUrl: url}});
+          }} />
+          <Btn onClick={() => handleUpdate("hero", data.hero)}>Save Hero Section</Btn>
+        </Card>
+      )}
+
+      {tab === "about" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>About Us Section</div>
+          <Fld label="Title" value={data.about?.title||""} onChange={e => setData({...data, about: {...data.about, title: e.target.value}})} />
+          <Fld label="Paragraph 1" as="textarea" rows={3} value={data.about?.paragraph1||""} onChange={e => setData({...data, about: {...data.about, paragraph1: e.target.value}})} />
+          <Fld label="Paragraph 2" as="textarea" rows={3} value={data.about?.paragraph2||""} onChange={e => setData({...data, about: {...data.about, paragraph2: e.target.value}})} />
+          <Fld label="Vision" as="textarea" rows={2} value={data.about?.vision||""} onChange={e => setData({...data, about: {...data.about, vision: e.target.value}})} />
+          <Fld label="Mission" as="textarea" rows={2} value={data.about?.mission||""} onChange={e => setData({...data, about: {...data.about, mission: e.target.value}})} />
+          <ImgUpload value={data.about?.imageUrl} width={200} onUpload={async f => {
+            const url = await uploadImage(f);
+            if(url) setData({...data, about: {...data.about, imageUrl: url}});
+          }} />
+          <Btn onClick={() => handleUpdate("about", data.about)}>Save About Section</Btn>
+        </Card>
+      )}
+
+      {tab === "directors" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+            <div style={{fontWeight:700, fontSize:18}}>Board of Directors</div>
+            <Btn small onClick={() => {
+              const newD = [...(data.directors || []), { id: Date.now(), name: "", role: "", description: "", imageUrl: "" }];
+              setData({...data, directors: newD});
+            }}>+ Add Director</Btn>
+          </div>
+          {(data.directors || []).map((d, i) => (
+            <div key={d.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
+              <div style={{position: "absolute", top: 10, right: 10}}>
+                <Btn small v="danger" onClick={() => {
+                  if(confirm("Remove this director?")) {
+                    const newD = data.directors.filter((_, idx) => idx !== i);
+                    setData({...data, directors: newD});
+                  }
+                }}>🗑️</Btn>
+              </div>
+              <Fld label="Name" value={d.name} onChange={e => {
+                const newD = [...data.directors];
+                newD[i].name = e.target.value;
+                setData({...data, directors: newD});
+              }} />
+              <Fld label="Role" value={d.role} onChange={e => {
+                const newD = [...data.directors];
+                newD[i].role = e.target.value;
+                setData({...data, directors: newD});
+              }} />
+              <Fld label="Description" as="textarea" rows={2} value={d.description} onChange={e => {
+                const newD = [...data.directors];
+                newD[i].description = e.target.value;
+                setData({...data, directors: newD});
+              }} />
+              <ImgUpload value={d.imageUrl} width={80} onUpload={async f => {
+                const url = await uploadImage(f);
+                if(url) {
+                  const newD = [...data.directors];
+                  newD[i].imageUrl = url;
+                  setData({...data, directors: newD});
+                }
+              }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <Btn small onClick={() => handleUpdate("directors", data.directors)}>💾 Save Director</Btn>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {tab === "staff" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+            <div style={{fontWeight:700, fontSize:18}}>Our Core Staff</div>
+            <Btn small onClick={() => {
+              const newS = [...(data.staff || []), { id: Date.now(), name: "", role: "", imageUrl: "" }];
+              setData({...data, staff: newS});
+            }}>+ Add Staff</Btn>
+          </div>
+          {(data.staff || []).map((s, i) => (
+            <div key={s.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
+              <div style={{position: "absolute", top: 10, right: 10}}>
+                <Btn small v="danger" onClick={() => {
+                  if(confirm("Remove this staff member?")) {
+                    const newS = data.staff.filter((_, idx) => idx !== i);
+                    setData({...data, staff: newS});
+                  }
+                }}>🗑️</Btn>
+              </div>
+              <Fld label="Name" value={s.name} onChange={e => {
+                const newS = [...data.staff];
+                newS[i].name = e.target.value;
+                setData({...data, staff: newS});
+              }} />
+              <Fld label="Role" value={s.role} onChange={e => {
+                const newS = [...data.staff];
+                newS[i].role = e.target.value;
+                setData({...data, staff: newS});
+              }} />
+              <ImgUpload value={s.imageUrl} width={60} onUpload={async f => {
+                const url = await uploadImage(f);
+                if(url) {
+                  const newS = [...data.staff];
+                  newS[i].imageUrl = url;
+                  setData({...data, staff: newS});
+                }
+              }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <Btn small onClick={() => handleUpdate("staff", data.staff)}>💾 Save Staff Member</Btn>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {tab === "services" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>Our Services Section</div>
+          <Fld label="Section Title" value={data.services?.title||""} onChange={e => setData({...data, services: {...data.services, title: e.target.value}})} />
+          <Fld label="Subtitle" value={data.services?.subtitle||""} onChange={e => setData({...data, services: {...data.services, subtitle: e.target.value}})} />
+          <Fld label="Description" as="textarea" rows={2} value={data.services?.description||""} onChange={e => setData({...data, services: {...data.services, description: e.target.value}})} />
+          
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15, marginTop:20}}>
+            <div style={{fontWeight:700, fontSize:16}}>Services List</div>
+            <Btn small onClick={() => {
+              const newL = [...(data.services?.list || []), { id: Date.now(), title: "", description: "", icon: "🏗️", imageUrl: "" }];
+              setData({...data, services: {...data.services, list: newL}});
+            }}>+ Add Service</Btn>
+          </div>
+          {data.services?.list?.map((s, i) => (
+            <div key={s.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
+              <div style={{position: "absolute", top: 10, right: 10}}>
+                <Btn small v="danger" onClick={() => {
+                  if(confirm("Remove this service?")) {
+                    const newL = data.services.list.filter((_, idx) => idx !== i);
+                    setData({...data, services: {...data.services, list: newL}});
+                  }
+                }}>🗑️</Btn>
+              </div>
+              <Fld label="Icon (Emoji or Text)" value={s.icon} onChange={e => {
+                const newL = [...data.services.list];
+                newL[i].icon = e.target.value;
+                setData({...data, services: {...data.services, list: newL}});
+              }} />
+              <Fld label="Title" value={s.title} onChange={e => {
+                const newL = [...data.services.list];
+                newL[i].title = e.target.value;
+                setData({...data, services: {...data.services, list: newL}});
+              }} />
+              <Fld label="Description" as="textarea" rows={2} value={s.description} onChange={e => {
+                const newL = [...data.services.list];
+                newL[i].description = e.target.value;
+                setData({...data, services: {...data.services, list: newL}});
+              }} />
+              <ImgUpload value={s.imageUrl} width={60} onUpload={async f => {
+                const url = await uploadImage(f);
+                if(url) {
+                  const newL = [...data.services.list];
+                  newL[i].imageUrl = url;
+                  setData({...data, services: {...data.services, list: newL}});
+                }
+              }} onRemove={() => {
+                if(confirm("Remove this image?")) {
+                  const newL = [...data.services.list];
+                  newL[i].imageUrl = "";
+                  setData({...data, services: {...data.services, list: newL}});
+                }
+              }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <Btn small onClick={() => handleUpdate("services", data.services)}>💾 Save Service</Btn>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {tab === "portfolio" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+            <div style={{fontWeight:700, fontSize:18}}>Recent Projects Showcase</div>
+            <Btn small onClick={() => {
+              const newP = [...(data.portfolio?.projects || []), { id: Date.now(), title: "", category: "", imageUrl: "" }];
+              setData({...data, portfolio: {...data.portfolio, projects: newP}});
+            }}>+ Add New Project</Btn>
+          </div>
+          {data.portfolio?.projects?.map((p, i) => (
+            <div key={p.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
+              <div style={{position: "absolute", top: 10, right: 10}}>
+                <Btn small v="danger" onClick={() => {
+                  if(confirm("Remove this project?")) {
+                    const newP = data.portfolio.projects.filter((_, idx) => idx !== i);
+                    setData({...data, portfolio: {...data.portfolio, projects: newP}});
+                  }
+                }}>🗑️</Btn>
+              </div>
+              <Fld label="Title" value={p.title} onChange={e => {
+                const newP = [...data.portfolio.projects];
+                newP[i].title = e.target.value;
+                setData({...data, portfolio: {...data.portfolio, projects: newP}});
+              }} />
+              <Fld label="Category" value={p.category} onChange={e => {
+                const newP = [...data.portfolio.projects];
+                newP[i].category = e.target.value;
+                setData({...data, portfolio: {...data.portfolio, projects: newP}});
+              }} />
+              <ImgUpload value={p.imageUrl} width={100} onUpload={async f => {
+                const url = await uploadImage(f);
+                if(url) {
+                  const newP = [...data.portfolio.projects];
+                  newP[i].imageUrl = url;
+                  setData({...data, portfolio: {...data.portfolio, projects: newP}});
+                }
+              }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <Btn small onClick={() => handleUpdate("portfolio", data.portfolio)}>💾 Save Project</Btn>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {tab === "faq" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>Client FAQs Section</div>
+          <Fld label="Section Title" value={data.faq?.title||""} onChange={e => setData({...data, faq: {...data.faq, title: e.target.value}})} />
+          <Fld label="Subtitle" value={data.faq?.subtitle||""} onChange={e => setData({...data, faq: {...data.faq, subtitle: e.target.value}})} />
+          <Fld label="Description" as="textarea" rows={2} value={data.faq?.description||""} onChange={e => setData({...data, faq: {...data.faq, description: e.target.value}})} />
+          
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15, marginTop:20}}>
+            <div style={{fontWeight:700, fontSize:16}}>Questions List</div>
+            <Btn small onClick={() => {
+              const newL = [...(data.faq?.list || []), { id: Date.now(), question: "", answer: "" }];
+              setData({...data, faq: {...data.faq, list: newL}});
+            }}>+ Add FAQ</Btn>
+          </div>
+          {data.faq?.list?.map((f, i) => (
+            <div key={f.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
+              <div style={{position: "absolute", top: 10, right: 10}}>
+                <Btn small v="danger" onClick={() => {
+                  if(confirm("Remove this FAQ?")) {
+                    const newL = data.faq.list.filter((_, idx) => idx !== i);
+                    setData({...data, faq: {...data.faq, list: newL}});
+                  }
+                }}>🗑️</Btn>
+              </div>
+              <Fld label="Question" value={f.question} onChange={e => {
+                const newL = [...data.faq.list];
+                newL[i].question = e.target.value;
+                setData({...data, faq: {...data.faq, list: newL}});
+              }} />
+              <Fld label="Answer" as="textarea" rows={3} value={f.answer} onChange={e => {
+                const newL = [...data.faq.list];
+                newL[i].answer = e.target.value;
+                setData({...data, faq: {...data.faq, list: newL}});
+              }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <Btn small onClick={() => handleUpdate("faq", data.faq)}>💾 Save FAQ</Btn>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+      <div style={{height:100}}></div>
+    </div>
+  );
+}
+
+function ReviewsAdmin() {
+  const [reviews, setReviews] = useState([]);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "reviews"), snap => {
+      const arr = [];
+      snap.forEach(d => arr.push({id: d.id, ...d.data()}));
+      setReviews(arr.sort((a,b)=>b.timestamp-a.timestamp));
+    });
+    return unsub;
+  }, []);
+
+  const updateStatus = async (id, status) => {
+    await updateDoc(doc(db, "reviews", id), { status });
+  };
+  const delReview = async (id) => {
+    if(confirm("Delete this review?")) await deleteDoc(doc(db, "reviews", id));
+  };
+
+  return (
+    <div>
+      <Hdr title="Website Reviews" sub="Manage client reviews submitted from the website." />
+      <Card>
+        <Tbl cols={["Name", "Rating", "Review", "Status", "Date", "Actions"]}
+          rows={reviews.map(r => [
+            <span style={{fontWeight:700}}>{r.name}</span>,
+            "★".repeat(r.rating) + "☆".repeat(5-r.rating),
+            <div style={{maxWidth:300, fontSize:13}}>{r.text}</div>,
+            <span style={{padding:"4px 10px", borderRadius:20, fontSize:12, fontWeight:700, background: r.status==="approved"?"#e8f5e9":r.status==="pending"?"#fff8e1":"#fdecea", color: r.status==="approved"?C.green:r.status==="pending"?C.gold:C.red}}>{r.status?.toUpperCase()}</span>,
+            new Date(r.timestamp).toLocaleDateString(),
+            <div style={{display:"flex", gap:6}}>
+               {r.status === "pending" && <Btn small onClick={()=>updateStatus(r.id, "approved")}>✅ Approve</Btn>}
+               {r.status === "pending" && <Btn small v="danger" onClick={()=>updateStatus(r.id, "rejected")}>❌ Reject</Btn>}
+               {r.status === "approved" && <Btn small v="secondary" onClick={()=>updateStatus(r.id, "rejected")}>Hide</Btn>}
+               <Btn small v="danger" onClick={()=>delReview(r.id)}>🗑️</Btn>
+            </div>
+          ])}
+        />
+      </Card>
+    </div>
+  );
+}
+
+function ConsultationsAdmin() {
+  const [leads, setLeads] = useState([]);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "consultations"), snap => {
+      const arr = [];
+      snap.forEach(d => arr.push({id: d.id, ...d.data()}));
+      setLeads(arr.sort((a,b)=>b.timestamp-a.timestamp));
+    });
+    return unsub;
+  }, []);
+
+  const updateStatus = async (id, status) => {
+    await updateDoc(doc(db, "consultations", id), { status });
+  };
+  const delLead = async (id) => {
+    if(confirm("Delete this lead?")) await deleteDoc(doc(db, "consultations", id));
+  };
+
+  return (
+    <div>
+      <Hdr title="Consultation Requests" sub="Manage leads from the public website." />
+      <Card>
+        <Tbl cols={["Name", "Phone", "Service", "Message", "Status", "Date", "Actions"]}
+          rows={leads.map(r => [
+            <span style={{fontWeight:700}}>{r.name}</span>,
+            r.phone,
+            r.service,
+            <div style={{maxWidth:250, fontSize:13}}>{r.message}</div>,
+            <span style={{padding:"4px 10px", borderRadius:20, fontSize:12, fontWeight:700, background: r.status==="new"?"#fff8e1":r.status==="contacted"?"#e3f2fd":"#e8f5e9", color: r.status==="new"?C.gold:r.status==="contacted"?C.blueDeep:C.green}}>{r.status?.toUpperCase()}</span>,
+            new Date(r.timestamp).toLocaleDateString(),
+            <div style={{display:"flex", gap:6}}>
+               {r.status === "new" && <Btn small onClick={()=>updateStatus(r.id, "contacted")}>📞 Contacted</Btn>}
+               {r.status === "contacted" && <Btn small onClick={()=>updateStatus(r.id, "closed")}>✅ Close</Btn>}
+               <Btn small v="danger" onClick={()=>delLead(r.id)}>🗑️</Btn>
+            </div>
+          ])}
+        />
+      </Card>
+    </div>
+  );
+}
+
 export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(true);
@@ -2655,6 +3119,9 @@ export default function App(){
   const[collapsed,setCollapsed]=useState(false);
   const[mobileOpen,setMobileOpen]=useState(false);
   const[liveOtpNotify,setLiveOtpNotify]=useState(null);
+  const[websiteNotification,setWebsiteNotification]=useState(null);
+  const[pendingReviewsCount,setPendingReviewsCount]=useState(0);
+  const[newConsultationsCount,setNewConsultationsCount]=useState(0);
 
   useEffect(() => {
     if (user?.role !== "Admin") return;
@@ -2664,22 +3131,25 @@ export default function App(){
       Notification.requestPermission();
     }
 
-    const unsub = onSnapshot(collection(db, "otp_requests"), (snapshot) => {
+    const unsubOtp = onSnapshot(collection(db, "otp_requests"), (snapshot) => {
       snapshot.docChanges().forEach(change => {
         if (change.type === "added" || change.type === "modified") {
           const data = change.doc.data();
           if (Date.now() - data.timestamp < 10000) { 
             setLiveOtpNotify(data);
             
-            // Show Native PC Notification (plays beautiful default OS sound)
+            // Play notification sound unconditionally
+            try {
+              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2357/2357-preview.mp3");
+              audio.play().catch(() => {});
+            } catch(e){}
+
+            // Show Native PC Notification
             if ("Notification" in window && Notification.permission === "granted") {
                new Notification(`New OTP: ${data.otp}`, {
                  body: `${data.staffName} is requesting to login.`,
                  icon: "https://cdn-icons-png.flaticon.com/512/2910/2910763.png" // Lock/Security icon
                });
-            } else {
-               // Fallback gentle sound if notifications are blocked
-               try { const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2357/2357-preview.mp3"); audio.play(); } catch(e){}
             }
             
             setTimeout(() => setLiveOtpNotify(null), 15000);
@@ -2687,7 +3157,54 @@ export default function App(){
         }
       });
     });
-    return () => unsub();
+
+    const unsubReviews = onSnapshot(query(collection(db, "reviews"), where("status", "==", "pending")), (snap) => {
+      setPendingReviewsCount(snap.size);
+      snap.docChanges().forEach(change => {
+        if (change.type === "added") {
+          const data = change.doc.data();
+          if (Date.now() - data.timestamp < 10000) {
+            setWebsiteNotification({ type: "Review", title: "New Website Review!", body: `From ${data.name}`, icon: "⭐", link: "reviews" });
+            
+            // Play notification sound unconditionally
+            try {
+              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2357/2357-preview.mp3");
+              audio.play().catch(() => {});
+            } catch(e){}
+
+            if ("Notification" in window && Notification.permission === "granted") {
+               new Notification("New Website Review", { body: `From ${data.name}`, icon: "https://cdn-icons-png.flaticon.com/512/1828/1828884.png" });
+            }
+            setTimeout(() => setWebsiteNotification(null), 15000);
+          }
+        }
+      });
+    });
+
+    const unsubConsultations = onSnapshot(query(collection(db, "consultations"), where("status", "==", "new")), (snap) => {
+      setNewConsultationsCount(snap.size);
+      snap.docChanges().forEach(change => {
+        if (change.type === "added") {
+          const data = change.doc.data();
+          if (Date.now() - data.timestamp < 10000) {
+            setWebsiteNotification({ type: "Consultation", title: "New Consultation Lead!", body: `From ${data.name} - ${data.service}`, icon: "📞", link: "consultations" });
+            
+            // Play notification sound unconditionally
+            try {
+              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2357/2357-preview.mp3");
+              audio.play().catch(() => {});
+            } catch(e){}
+
+            if ("Notification" in window && Notification.permission === "granted") {
+               new Notification("New Consultation Request", { body: `From ${data.name}`, icon: "https://cdn-icons-png.flaticon.com/512/3095/3095228.png" });
+            }
+            setTimeout(() => setWebsiteNotification(null), 15000);
+          }
+        }
+      });
+    });
+
+    return () => { unsubOtp(); unsubReviews(); unsubConsultations(); };
   }, [user]);
 
   useEffect(() => {
@@ -2830,6 +3347,9 @@ export default function App(){
     {id:"vouchers",icon:"🧾",label:"Vouchers"},
     {id:"clients",icon:"👥",label:"Clients"},
     ...(user?.role==="Admin"?[{id:"reports",icon:"📊",label:"Reports"}]:[]),
+    ...(user?.role==="Admin"?[{id:"websitecms",icon:"🌐",label:"Website Edit"}]:[]),
+    ...(user?.role==="Admin"?[{id:"reviews",icon:"⭐",label:"Reviews", count: pendingReviewsCount}]:[]),
+    ...(user?.role==="Admin"?[{id:"consultations",icon:"📞",label:"Consultations", count: newConsultationsCount}]:[]),
     {id:"add-entry",icon:"➕",label:"Add Entry"},
     {id:"ledger",icon:"📖",label:"Ledger"},
     ...(user?.role==="Admin"?[{id:"users",icon:"👤",label:"Users"}]:[]),
@@ -3049,6 +3569,7 @@ export default function App(){
               onMouseLeave={e=>{if(nav!==n.id)e.currentTarget.style.background="transparent";}}>
               <span style={{fontSize:17,flexShrink:0}}>{n.icon}</span>
               {!collapsed&&<span style={{whiteSpace:"nowrap"}}>{n.label}</span>}
+              {!collapsed && n.count > 0 && <span style={{marginLeft: "auto", background: C.red, color: "white", padding: "2px 6px", borderRadius: 10, fontSize: 11, fontWeight: 700}}>{n.count}</span>}
             </div>
           ))}
         </nav>
@@ -3087,6 +3608,7 @@ export default function App(){
                 <div key={n.id} onClick={()=>{setNav(n.id);setMobileOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 11px",borderRadius:11,marginBottom:2,cursor:"pointer",background:nav===n.id?C.pistaPale:"transparent",color:nav===n.id?C.sageDark:C.g400,fontWeight:nav===n.id?700:500,fontSize:13}}>
                   <span style={{fontSize:17}}>{n.icon}</span>
                   <span style={{whiteSpace:"nowrap"}}>{n.label}</span>
+                  {n.count > 0 && <span style={{marginLeft: "auto", background: C.red, color: "white", padding: "2px 6px", borderRadius: 10, fontSize: 11, fontWeight: 700}}>{n.count}</span>}
                 </div>
               ))}
             </nav>
@@ -3179,6 +3701,9 @@ export default function App(){
         </div>
         <div className="main-content-container" style={{flex:1,overflowY:"auto",padding:24}}>
           {nav==="home"&&<Home sites={sites} user={user} setNav={setNav} onImportDemo={handleSeedAll}/>}
+          {nav==="websitecms"&&user.role==="Admin"&&<WebsiteCMS/>}
+          {nav==="reviews"&&user.role==="Admin"&&<ReviewsAdmin/>}
+          {nav==="consultations"&&user.role==="Admin"&&<ConsultationsAdmin/>}
           {nav==="sites"&&<Sites user={user} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="transactions"&&<Transactions user={user} sites={sites}/>}
           {nav==="vouchers"&&<Vouchers materialEntries={materialEntries} labourEntries={labourEntries}/>}
@@ -3202,6 +3727,17 @@ export default function App(){
               <div style={{fontSize: 22, fontWeight: 900, color: C.red, letterSpacing: 2, marginTop: 4}}>{liveOtpNotify.otp}</div>
            </div>
            <button onClick={(e)=>{e.stopPropagation();setLiveOtpNotify(null)}} style={{background:"transparent", border:"none", position:"absolute", top: 10, right: 10, cursor:"pointer", color:C.g400, fontSize:16}}>✕</button>
+        </div>
+      )}
+
+      {websiteNotification && (
+        <div style={{position:"fixed", bottom: liveOtpNotify ? 140 : 20, right: 20, background: C.cardBg, border: `2px solid ${C.blueDeep}`, borderRadius: 12, padding: "16px 20px", boxShadow: C.shL, zIndex: 9999, animation: "up 0.5s ease", display: "flex", alignItems: "center", gap: 15, cursor: "pointer"}} onClick={() => { setWebsiteNotification(null); setNav(websiteNotification.link); }}>
+           <div style={{fontSize: 24}}>{websiteNotification.icon}</div>
+           <div>
+              <div style={{fontWeight: 800, color: C.dark, fontSize: 15, marginBottom: 2}}>{websiteNotification.title}</div>
+              <div style={{fontSize: 13, color: C.g500}}>{websiteNotification.body}</div>
+           </div>
+           <button onClick={(e)=>{e.stopPropagation();setWebsiteNotification(null)}} style={{background:"transparent", border:"none", position:"absolute", top: 10, right: 10, cursor:"pointer", color:C.g400, fontSize:16}}>✕</button>
         </div>
       )}
       
