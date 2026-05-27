@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { db, auth, provider } from "./firebase";
+import { db, auth, provider, storage } from "./firebase";
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch, query, where, getDocs, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 
 const C = {
   pista:"var(--pista)",pistaLight:"var(--pistaLight)",pistaPale:"var(--pistaPale)",
@@ -270,7 +271,7 @@ function Tbl({cols,rows,emptyMsg="No records"}){
         <thead><tr style={{background:C.pistaPale}}>{cols.map(c=><th key={c} style={{padding:"12px 14px",textAlign:"left",fontSize:12,color:C.g500,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,whiteSpace:"nowrap"}}>{c}</th>)}</tr></thead>
         <tbody>{rows.length===0?<tr><td colSpan={cols.length} style={{padding:36,textAlign:"center",color:C.g400,fontSize:14}}>{emptyMsg}</td></tr>
           :rows.map((row,i)=><tr key={i} style={{borderBottom:`1px solid ${C.g100}`}} onMouseEnter={e=>e.currentTarget.style.background=C.pistaPale+"55"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-            {row.map((cell,j)=><td key={j} style={{padding:"11px 14px",fontSize:13,color:C.g700,verticalAlign:"middle"}}>{cell}</td>)}
+            {row.map((cell,j)=><td key={j} style={{padding:"11px 14px",fontSize:13,color:C.g700,verticalAlign:"middle",textAlign:"left"}}>{cell}</td>)}
           </tr>)}
         </tbody>
       </table>
@@ -562,10 +563,10 @@ function Login({onLogin, authError, setAuthError}){
 
 // ─── HOME ─────────────────────────────────────────────────────
 function Home({sites,user,setNav,onImportDemo}){
-  const rev=sites.ongoing.reduce((a,s)=>a+s.payment.paid,0)+sites.completed.reduce((a,s)=>a+s.totalCost,0);
-  const exp=sites.ongoing.reduce((a,s)=>a+s.expenses.material.reduce((b,m)=>b+m.advance,0)+s.expenses.labour.reduce((b,l)=>b+l.advance,0),0);
-  const pending=sites.ongoing.reduce((a,s)=>a+Math.max(0,s.payment.totalDeal-s.payment.paid),0);
-  const vouchers=sites.ongoing.reduce((a,s)=>a+s.expenses.bills.length,0);
+  const rev=sites.ongoing.reduce((a,s)=>a+(s.payment?.paid||0),0)+sites.completed.reduce((a,s)=>a+(s.totalCost||0),0);
+  const exp=sites.ongoing.reduce((a,s)=>a+(s.expenses?.material||[]).reduce((b,m)=>b+(m.advance||0),0)+(s.expenses?.labour||[]).reduce((b,l)=>b+(l.advance||0),0),0);
+  const pending=sites.ongoing.reduce((a,s)=>a+Math.max(0,(s.payment?.totalDeal||0)-(s.payment?.paid||0)),0);
+  const vouchers=sites.ongoing.reduce((a,s)=>a+(s.expenses?.bills?.length||0),0);
 
   const realChartData = computeRealChartData(sites);
   const realPieData = computeRealPieData(sites);
@@ -670,7 +671,7 @@ function Home({sites,user,setNav,onImportDemo}){
           <div key={s.id} style={{padding:"14px 22px",borderBottom:`1px solid ${C.g100}`}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
               <div><span style={{fontWeight:700,color:C.dark,fontSize:14}}>{s.name}</span><span style={{fontSize:13,color:C.g400,marginLeft:10}}>{s.client}</span></div>
-              {user?.role === "Admin" && <span style={{fontSize:13,color:C.red,fontWeight:600}}>Pending: {fmt(Math.max(0,s.payment.totalDeal-s.payment.paid))}</span>}
+              {user?.role === "Admin" && <span style={{fontSize:13,color:C.red,fontWeight:600}}>Pending: {fmt(Math.max(0,(s.payment?.totalDeal||0)-(s.payment?.paid||0)))}</span>}
             </div>
             <ProgBar pct={s.progress} h={9}/>
             <div style={{fontSize:12,color:C.g400,marginTop:4,textAlign:"right"}}>{s.progress}% complete</div>
@@ -724,11 +725,11 @@ function PayTab({site}){
   const[showAdd,setShowAdd]=useState(false);
   const[editId,setEditId]=useState(null);
   const[form,setForm]=useState({amount:"",type:"Cash",date:""});
-  const p=site.payment,rem=p.totalDeal-p.paid,extra=rem<0?Math.abs(rem):0;
+  const p=site.payment||{totalDeal:0,paid:0,methods:[]},rem=p.totalDeal-p.paid,extra=rem<0?Math.abs(rem):0;
 
   function openEdit(m){setEditId(m.id);setForm({amount:m.amount,type:m.type,date:m.date});}
   async function saveEdit(){
-    const newMethods=site.payment.methods.map(m=>m.id===editId?{...m,amount:Number(form.amount),type:form.type,date:form.date}:m);
+    const newMethods=p.methods.map(m=>m.id===editId?{...m,amount:Number(form.amount),type:form.type,date:form.date}:m);
     const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
     const siteRef = doc(db, "sites", site.id.toString());
     await updateDoc(siteRef, {
@@ -740,17 +741,17 @@ function PayTab({site}){
   async function addPayment(){
     if(!form.amount)return;
     const amt=Number(form.amount);
-    const newMethods=[...site.payment.methods,{id:Date.now(),type:form.type,amount:amt,date:form.date||new Date().toLocaleDateString("en-IN")}];
+    const newMethods=[...p.methods,{id:Date.now(),type:form.type,amount:amt,date:form.date||new Date().toLocaleDateString("en-IN")}];
     const siteRef = doc(db, "sites", site.id.toString());
     await updateDoc(siteRef, {
       "payment.methods": newMethods,
-      "payment.paid": site.payment.paid+amt
+      "payment.paid": p.paid+amt
     });
     setForm({amount:"",type:"Cash",date:""});setShowAdd(false);
   }
   async function delPayment(id){
     if(!confirm("Are you sure you want to delete this payment record? It will be moved to the Trash Bin.")) return;
-    const paymentToDelete = site.payment.methods.find(m => m.id === id);
+    const paymentToDelete = p.methods.find(m => m.id === id);
     if (!paymentToDelete) return;
     const trashId = Date.now().toString();
     await setDoc(doc(db, "trash", trashId), {
@@ -761,7 +762,7 @@ function PayTab({site}){
       siteName: site.name,
       data: paymentToDelete
     });
-    const newMethods=site.payment.methods.filter(m=>m.id!==id);
+    const newMethods=p.methods.filter(m=>m.id!==id);
     const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
     const siteRef = doc(db, "sites", site.id.toString());
     await updateDoc(siteRef, {
@@ -812,7 +813,8 @@ function PayTab({site}){
 function MatTab({site, sites, materialEntries}){
   const[showAdd,setShowAdd]=useState(false);
   
-  const siteMaterials = materialEntries.filter(m => m.siteId === site.id.toString());
+  const fetchedMaterials = materialEntries.filter(m => m.siteId?.toString() === site.id?.toString());
+  const siteMaterials = [...(site.expenses?.material || []), ...fetchedMaterials];
 
   return(
     <div>
@@ -839,7 +841,8 @@ function MatTab({site, sites, materialEntries}){
 function LabTab({site, sites, labourEntries}){
   const[showAdd,setShowAdd]=useState(false);
   
-  const siteLabours = labourEntries.filter(l => l.siteId === site.id.toString());
+  const fetchedLabours = labourEntries.filter(l => l.siteId?.toString() === site.id?.toString());
+  const siteLabours = [...(site.expenses?.labour || []), ...fetchedLabours];
 
   return(
     <div>
@@ -868,33 +871,35 @@ function LabTab({site, sites, labourEntries}){
 
 // ─── BILLS TAB ────────────────────────────────────────────────
 function BillsTab({site}){
-  const[showAdd,setShowAdd]=useState(false);
   const[editRow,setEditRow]=useState(null);
   const blank={type:"Material",date:"",contractor:"",material:"",qty:"",rate:""};
   const[form,setForm]=useState(blank);
-  const bills=site.expenses.bills;
+  const bills=site.expenses?.bills||[];
   const total=bills.reduce((a,b)=>a+b.total,0);
 
   async function save(isEdit){
     const t=Number(form.qty)*Number(form.rate);
     const n=bills.length;
     const entry={...form,qty:Number(form.qty),rate:Number(form.rate),total:t,billNo:`B-${String(n+1).padStart(4,"0")}`};
-    const newBills=isEdit?site.expenses.bills.map(bl=>bl.id===editRow?{...entry,id:editRow}:bl):[...site.expenses.bills,{...entry,id:Date.now()}];
+    const currentBills = site.expenses?.bills || [];
+    const newBills=isEdit?currentBills.map(bl=>bl.id===editRow?{...entry,id:editRow}:bl):[...currentBills,{...entry,id:Date.now()}];
     const siteRef = doc(db, "sites", site.id.toString());
     await updateDoc(siteRef, {
       "expenses.bills": newBills
     });
-    setForm(blank);isEdit?setEditRow(null):setShowAdd(false);
+    setForm(blank);
+    setEditRow(null);
   }
   async function del(id){
     if(!confirm("Are you sure you want to delete this expense bill? It will be moved to the Trash Bin.")) return;
-    const billToDelete = site.expenses.bills.find(b => b.id === id);
+    const currentBills = site.expenses?.bills || [];
+    const billToDelete = currentBills.find(b => b.id === id);
     if (!billToDelete) return;
     await moveToTrash("Expense", billToDelete, {
       parentSiteId: site.id.toString(),
       siteName: site.name
     });
-    const newBills=site.expenses.bills.filter(b=>b.id!==id);
+    const newBills=currentBills.filter(b=>b.id!==id);
     const siteRef = doc(db, "sites", site.id.toString());
     await updateDoc(siteRef, {
       "expenses.bills": newBills
@@ -903,7 +908,6 @@ function BillsTab({site}){
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn onClick={()=>{setForm(blank);setShowAdd(true);}}>➕ Add Bill</Btn></div>
       <Card style={{marginBottom:14}}>
         <Tbl cols={["Bill No.","Type","Date","Contractor","Item","Qty","Rate","Total","Actions"]}
           rows={bills.map(b=>[
@@ -920,14 +924,14 @@ function BillsTab({site}){
         <span style={{fontWeight:700,color:C.dark}}>Total Expenses</span>
         <span style={{fontWeight:800,fontSize:17,color:C.sageDark}}>{fmt(total)}</span>
       </div>
-      {(showAdd||editRow)&&<Modal title={editRow?"Edit Bill":"Add Bill"} onClose={()=>{setShowAdd(false);setEditRow(null);}}>
+      {editRow&&<Modal title="Edit Bill" onClose={()=>setEditRow(null)}>
         <Fld label="Type" as="select" value={form.type} onChange={e=>setForm({...form,type:e.target.value})} options={["Material","Labour"]}/>
         <Fld label="Date" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
         <Fld label="Contractor" value={form.contractor} onChange={e=>setForm({...form,contractor:e.target.value})}/>
         <Fld label="Material / Work" value={form.material} onChange={e=>setForm({...form,material:e.target.value})}/>
         <Fld label="Quantity" type="number" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})}/>
         <Fld label="Rate (₹)" type="number" value={form.rate} onChange={e=>setForm({...form,rate:e.target.value})}/>
-        <div style={{display:"flex",gap:10}}><Btn onClick={()=>save(!!editRow)}>{editRow?"Update":"Save"}</Btn><Btn v="ghost" onClick={()=>{setShowAdd(false);setEditRow(null);}}>Cancel</Btn></div>
+        <div style={{display:"flex",gap:10}}><Btn onClick={()=>save(true)}>Update</Btn><Btn v="ghost" onClick={()=>setEditRow(null)}>Cancel</Btn></div>
       </Modal>}
     </div>
   );
@@ -938,7 +942,37 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
   const[main,setMain]=useState(user?.role === "Admin" ? "payment" : "expenses");
   const[exp,setExp]=useState("material");
   const[editSite,setEditSite]=useState(false);
-  const[siteForm,setSiteForm]=useState({name:site.name,client:site.client,contact:site.contact,address:site.address,startDate:site.startDate,estCompletion:site.estCompletion,progress:site.progress,totalDeal:site.payment.totalDeal});
+  const[uploading,setUploading]=useState(false);
+  const[siteForm,setSiteForm]=useState({name:site.name,client:site.client,contact:site.contact,address:site.address,startDate:site.startDate,estCompletion:site.estCompletion,progress:site.progress,totalDeal:site.payment?.totalDeal||0});
+
+  async function handleUploadDoc(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const storageRef = ref(storage, `documents/${site.id}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      
+      const newDoc = {
+        id: Date.now(),
+        name: file.name,
+        size: (file.size / 1024 / 1024).toFixed(1) + " MB",
+        date: new Date().toLocaleDateString("en-IN"),
+        url: url
+      };
+      
+      const siteRef = doc(db, "sites", site.id.toString());
+      await updateDoc(siteRef, {
+        documents: [...(site.documents || []), newDoc]
+      });
+      alert("Document uploaded successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed: " + err.message);
+    }
+    setUploading(false);
+  }
 
   async function saveSiteEdit(){
     const siteRef = doc(db, "sites", site.id.toString());
@@ -1024,13 +1058,13 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
             <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Detailed Financial Balance</div>
             {[
               ...(user?.role === "Admin" ? [
-                ["Total Construction Deal Value", fmt(site.payment.totalDeal), C.dark],
-                ["Revenue Collected to Date", fmt(site.payment.paid), C.green],
-                ["Outstanding Balance", fmt(Math.max(0, site.payment.totalDeal - site.payment.paid)), C.red],
+                ["Total Construction Deal Value", fmt(site.payment?.totalDeal||0), C.dark],
+                ["Revenue Collected to Date", fmt(site.payment?.paid||0), C.green],
+                ["Outstanding Balance", fmt(Math.max(0, (site.payment?.totalDeal||0) - (site.payment?.paid||0))), C.red],
               ] : []),
-              ["Materials Expense Spent", fmt(site.expenses.bills.filter(b=>b.type==="Material").reduce((a,b)=>a+b.total,0)), C.orange],
-              ["Labour Expense Spent", fmt(site.expenses.bills.filter(b=>b.type==="Labour").reduce((a,b)=>a+b.total,0)), C.blueDeep],
-              ["Total Site Expenditure", fmt(site.expenses.bills.reduce((a,b)=>a+b.total,0)), C.red],
+              ["Materials Expense Spent", fmt((site.expenses?.bills||[]).filter(b=>b.type==="Material").reduce((a,b)=>a+b.total,0)), C.orange],
+              ["Labour Expense Spent", fmt((site.expenses?.bills||[]).filter(b=>b.type==="Labour").reduce((a,b)=>a+b.total,0)), C.blueDeep],
+              ["Total Site Expenditure", fmt((site.expenses?.bills||[]).reduce((a,b)=>a+b.total,0)), C.red],
             ].map(([k,v,c])=>(
               <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
                 <span style={{fontSize:13,color:C.g400,fontWeight:600}}>{k}</span>
@@ -1044,26 +1078,29 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
       {main==="documents"&& (
         <div style={{marginTop:10}}>
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
-            <Btn onClick={() => alert("Upload Document feature: Select a PDF, Image, or Doc file to upload to Firestore Cloud Storage!")}>
-              📤 Upload Site Document
-            </Btn>
+            <label style={{background:C.sageDark,color:"var(--btnPrimaryText)",borderRadius:10,padding:"10px 20px",fontSize:14,fontWeight:600,cursor:uploading?"not-allowed":"pointer",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.15s"}}>
+              {uploading ? "Uploading..." : "📤 Upload Site Document"}
+              <input type="file" onChange={handleUploadDoc} style={{display:"none"}} disabled={uploading}/>
+            </label>
           </div>
           <Card style={{padding:22}}>
             <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Site Document Vault (Contracts & Blueprints)</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16}}>
-              {(site.documents || [
-                { id: 1, name: "Site_Approved_Blueprints_v2.pdf", size: "4.8 MB", date: "12 Apr 2026" },
-                { id: 2, name: "Mutual_Agreement_Signed.pdf", size: "2.1 MB", date: "15 Apr 2026" },
-                { id: 3, name: "Registry_Deed_Copy.pdf", size: "8.4 MB", date: "18 Apr 2026" }
-              ]).map(d => (
-                <div key={d.id} style={{background:C.offWhite,border:`1.5px solid ${C.g100}`,borderRadius:12,padding:16,display:"flex",flexDirection:"column",justify:"space-between",height:120}}>
+              {(site.documents || []).length === 0 ? (
+                <div style={{color:C.g400,fontSize:13,gridColumn:"1/-1"}}>No documents uploaded yet.</div>
+              ) : (site.documents || []).map(d => (
+                <div key={d.id} style={{background:C.offWhite,border:`1.5px solid ${C.g100}`,borderRadius:12,padding:16,display:"flex",flexDirection:"column",justifyContent:"space-between",height:120}}>
                   <div style={{fontSize:24}}>📄</div>
                   <div>
                     <div style={{fontWeight:700,fontSize:13,color:C.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.name}>{d.name}</div>
                     <div style={{fontSize:11,color:C.g400,marginTop:2}}>{d.size} · {d.date}</div>
                   </div>
                   <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}}>
-                    <a href="#" onClick={(e) => { e.preventDefault(); alert(`Downloading file: ${d.name}`); }} style={{color:C.blueDeep,fontWeight:700,fontSize:12,textDecoration:"none"}}>Download ⬇️</a>
+                    {d.url ? (
+                      <a href={d.url} target="_blank" rel="noreferrer" style={{color:C.blueDeep,fontWeight:700,fontSize:12,textDecoration:"none"}}>Download ⬇️</a>
+                    ) : (
+                      <span style={{color:C.g400,fontSize:12}}>Processing...</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1080,7 +1117,7 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
               <div style={{position:"absolute",left:11,top:4,bottom:4,width:2,background:C.g100}}/>
               {( () => {
                 const timelineEvents = [];
-                timelineEvents.push({ type: "start", title: "Site Project Initiated", desc: `Project deal started with client ${site.client} at deal value of ${fmt(site.payment.totalDeal)}`, date: site.startDate || "12-04-2026", icon: "🏗️", color: C.sageDark });
+                timelineEvents.push({ type: "start", title: "Site Project Initiated", desc: `Project deal started with client ${site.client} at deal value of ${fmt(site.payment?.totalDeal||0)}`, date: site.startDate || "12-04-2026", icon: "🏗️", color: C.sageDark });
                 
                 if (site.payment && site.payment.methods) {
                   site.payment.methods.forEach(p => {
@@ -1197,8 +1234,8 @@ function Sites({user, sites, materialEntries, labourEntries}){
       client:s.client,
       contact:s.contact,
       address:s.address,
-      totalCost:s.payment.totalDeal,
-      contractors:s.expenses.labour.map(l=>l.contractor).filter((v,i,a)=>a.indexOf(v)===i),
+      totalCost:s.payment?.totalDeal||0,
+      contractors:(s.expenses?.labour||[]).map(l=>l.contractor).filter((v,i,a)=>a.indexOf(v)===i),
       timeline:`${s.startDate} – Today`,
       startDate:s.startDate,
       endDate:new Date().toLocaleDateString("en-IN"),
@@ -1230,7 +1267,7 @@ function Sites({user, sites, materialEntries, labourEntries}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
           {sites.ongoing.length===0&&<div style={{padding:40,color:C.g400,fontSize:14,gridColumn:"1/-1",textAlign:"center"}}>No ongoing sites. Click "Add New Site" to start.</div>}
           {sites.ongoing.map(s=>{
-            const rem=s.payment.totalDeal-s.payment.paid;
+            const rem=(s.payment?.totalDeal||0)-(s.payment?.paid||0);
             return(
               <Card key={s.id} style={{padding:20,borderTop:`4px solid ${C.pista}`,position:"relative"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
@@ -1240,7 +1277,7 @@ function Sites({user, sites, materialEntries, labourEntries}){
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>👤 {s.client} · 📞 {s.contact}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>📍 {s.address}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:12}}>📅 {s.startDate} → {s.estCompletion}</div>
-                {user?.role === "Admin" && [["Total Deal",fmt(s.payment.totalDeal)],["Paid",fmt(s.payment.paid)],["Pending",fmt(Math.max(0,rem))]].map(([k,v])=>(
+                {user?.role === "Admin" && [["Total Deal",fmt(s.payment?.totalDeal||0)],["Paid",fmt(s.payment?.paid||0)],["Pending",fmt(Math.max(0,rem))]].map(([k,v])=>(
                   <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.g100}`}}>
                     <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:700,color:C.dark}}>{v}</span>
                   </div>
@@ -1292,6 +1329,12 @@ function Sites({user, sites, materialEntries, labourEntries}){
                 }
                 cells.push(s.timeline, <Bdg s="Completed"/>,
                   <div style={{display:"flex",gap:6}}>
+                    <Btn small v="ghost" onClick={async ()=>{
+                      if(confirm(`Move "${s.name}" back to Under Process?`)){
+                        const ref = doc(db, "sites", s.id.toString());
+                        await setDoc(ref, { ...s, status: "ongoing", progress: 99 });
+                      }
+                    }}>↩️</Btn>
                     <Btn small v="secondary" onClick={()=>setEditCompleted({...s})}>✏️</Btn>
                     <Btn small v="danger" onClick={()=>{
                       if(confirm(`Are you sure you want to delete completed site "${s.name}"? It will be moved to the Trash Bin.`)){
@@ -1611,11 +1654,13 @@ function LedgerDetailTable({ type, name, entries }) {
     doc.setFontSize(11);
     doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 30);
     
+    const pdfFmt = n => fmt(n).replace(/₹/g, "Rs. ");
+
     const body = filtered.map((e, i) => {
       if (type === "Material") {
-        return [i+1, e.siteName || "N/A", e.material || "N/A", fmt(e.rate * e.quantity), fmt(e.paid || 0), fmt(e.due || 0)];
+        return [i+1, e.siteName || "N/A", e.material || "N/A", pdfFmt(e.rate * e.quantity), pdfFmt(e.paid || 0), pdfFmt(e.due || 0)];
       } else {
-        return [i+1, e.siteName || "N/A", e.workType || "N/A", fmt(e.amount || 0), fmt(e.paid || 0), fmt(e.due || 0)];
+        return [i+1, e.siteName || "N/A", e.workType || "N/A", pdfFmt(e.amount || 0), pdfFmt(e.paid || 0), pdfFmt(e.due || 0)];
       }
     });
 
@@ -1623,11 +1668,11 @@ function LedgerDetailTable({ type, name, entries }) {
       ? [["Sr. No", "Site Name", "Material Name", "Bill (Rs)", "Paid (Rs)", "Due (Rs)"]]
       : [["Sr. No", "Site Name", "Work Type", "Rate (Rs)", "Paid (Rs)", "Due (Rs)"]];
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 36,
       head: head,
       body: body,
-      foot: [["", "", "TOTAL", fmt(totalBill), fmt(totalPaid), fmt(totalDue)]]
+      foot: [["", "", "TOTAL", pdfFmt(totalBill), pdfFmt(totalPaid), pdfFmt(totalDue)]]
     });
     doc.save(`Ledger_${name.replace(/\s+/g, '_')}.pdf`);
   }
@@ -1798,11 +1843,11 @@ function Transactions({user, sites}){
     const s=sites.ongoing.find(x=>x.name===txnForm.siteId);
     if(!s||!txnForm.amount)return;
     const amt=Number(txnForm.amount);
-    const newM=[...s.payment.methods,{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
+    const newM=[...(s.payment?.methods||[]),{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
     const siteRef = doc(db, "sites", s.id.toString());
     await updateDoc(siteRef, {
       "payment.methods": newM,
-      "payment.paid": s.payment.paid+amt
+      "payment.paid": (s.payment?.paid||0)+amt
     });
     setTxnForm({siteId:"",amount:"",type:"Cash",date:""});setShowAdd(false);
   }
@@ -1829,7 +1874,7 @@ function Transactions({user, sites}){
       {tab==="contractors"&&(
         <Card>
           <Tbl cols={["Contractor","Site","Work","Total","Paid","Remaining","Status","Actions"]}
-            rows={sites.ongoing.flatMap(s=>s.expenses.labour.map(l=>[
+            rows={sites.ongoing.flatMap(s=>(s.expenses?.labour||[]).map(l=>[
               <span style={{fontWeight:700}}>{l.contractor}</span>,s.name,l.work,fmt(l.total),
               <span style={{color:C.green,fontWeight:700}}>{fmt(l.advance)}</span>,
               <span style={{color:C.red,fontWeight:700}}>{fmt(l.remaining)}</span>,
@@ -1838,7 +1883,7 @@ function Transactions({user, sites}){
                 const newAdv=prompt("Enter advance amount to add:");
                 if(!newAdv)return;
                 const amt=Number(newAdv);
-                const newLabour=s.expenses.labour.map(lb=>lb.id===l.id?{...lb,advance:lb.advance+amt,remaining:Math.max(0,lb.remaining-amt),status:lb.remaining-amt<=0?"Paid":"Partial"}:lb);
+                const newLabour=(s.expenses?.labour||[]).map(lb=>lb.id===l.id?{...lb,advance:lb.advance+amt,remaining:Math.max(0,lb.remaining-amt),status:lb.remaining-amt<=0?"Paid":"Partial"}:lb);
                 const siteRef = doc(db, "sites", s.id.toString());
                 await updateDoc(siteRef, {
                   "expenses.labour": newLabour
@@ -1866,11 +1911,11 @@ function Transactions({user, sites}){
             const s=sites.ongoing.find(x=>x.id===editTxn);
             if(!s||!txnForm.amount)return;
             const amt=Number(txnForm.amount);
-            const newM=[...s.payment.methods,{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
+            const newM=[...(s.payment?.methods||[]),{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
             const siteRef = doc(db, "sites", s.id.toString());
             await updateDoc(siteRef, {
               "payment.methods": newM,
-              "payment.paid": s.payment.paid+amt
+              "payment.paid": (s.payment?.paid||0)+amt
             });
             setEditTxn(null);
           }}>Save</Btn>
@@ -2028,7 +2073,7 @@ function Clients({user, clients}){
 function Reports({sites}){
   const rows=[...sites.ongoing,...sites.completed].map(s=>{
     const total=s.payment?s.payment.totalDeal:s.totalCost,paid=s.payment?s.payment.paid:s.totalCost;
-    const expenses=s.expenses?s.expenses.material.reduce((a,m)=>a+m.total,0)+s.expenses.labour.reduce((a,l)=>a+l.total,0):0;
+    const expenses=s.expenses?((s.expenses?.material||[]).reduce((a,m)=>a+(m.total||0),0)+(s.expenses?.labour||[]).reduce((a,l)=>a+(l.total||0),0)):0;
     return{client:s.client,site:s.name,total,paid,unpaid:Math.max(0,total-paid),refund:Math.max(0,paid-total),expenses,profit:paid-expenses};
   });
   const rev=rows.reduce((a,r)=>a+r.paid,0),exp=rows.reduce((a,r)=>a+r.expenses,0),profit=rows.reduce((a,r)=>a+r.profit,0);
