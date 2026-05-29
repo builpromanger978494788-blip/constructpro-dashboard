@@ -1837,21 +1837,25 @@ function Ledger({ materialEntries, labourEntries }) {
   const matGroups = {};
   materialEntries.forEach(m => {
     const v = m.vendor || "Unknown Vendor";
-    if (!matGroups[v]) matGroups[v] = { count: 0, total: 0 };
+    if (!matGroups[v]) matGroups[v] = { count: 0, total: 0, latestAt: 0 };
     matGroups[v].count++;
     matGroups[v].total += ((m.rate * m.quantity) || 0);
+    const ts = new Date(m.createdAt?.toDate() || m.id || 0).getTime();
+    if(ts > matGroups[v].latestAt) matGroups[v].latestAt = ts;
   });
-  const uniqueVendors = Object.keys(matGroups).sort((a, b) => a.localeCompare(b));
+  const uniqueVendors = Object.keys(matGroups).sort((a, b) => matGroups[b].latestAt - matGroups[a].latestAt);
 
   const labGroups = {};
   labourEntries.forEach(l => {
     const c = l.contractor || "Unknown Contractor";
-    if (!labGroups[c]) labGroups[c] = { count: 0, total: 0, workTypes: new Set() };
+    if (!labGroups[c]) labGroups[c] = { count: 0, total: 0, workTypes: new Set(), latestAt: 0 };
     labGroups[c].count++;
     labGroups[c].total += (l.amount || 0);
     if (l.workType) labGroups[c].workTypes.add(l.workType);
+    const ts = new Date(l.createdAt?.toDate() || l.id || 0).getTime();
+    if(ts > labGroups[c].latestAt) labGroups[c].latestAt = ts;
   });
-  const uniqueContractors = Object.keys(labGroups).sort((a, b) => a.localeCompare(b));
+  const uniqueContractors = Object.keys(labGroups).sort((a, b) => labGroups[b].latestAt - labGroups[a].latestAt);
 
   async function handleDelete(type, name) {
     if (!confirm(`Are you sure you want to delete all entries for ${type === 'Material' ? 'vendor' : 'contractor'} "${name}"? They will be moved to the Trash Bin.`)) return;
@@ -1887,7 +1891,8 @@ function Ledger({ materialEntries, labourEntries }) {
           {uniqueVendors.length === 0 && <div style={{color: C.g400, padding: 20}}>No material entries found.</div>}
           {uniqueVendors.map(v => (
             <Card key={v} style={{padding:20}}>
-              <div style={{fontWeight:800,fontSize:18,color:C.dark,marginBottom:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={v}>{v}</div>
+              <div style={{fontWeight:800,fontSize:18,color:C.dark,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={v}>{v}</div>
+              <div style={{fontSize: 10, color: C.g400, fontStyle: "italic", marginBottom: 14}}>{fmtDate(matGroups[v].latestAt)}</div>
               <div style={{fontSize:14,color:C.g500,marginBottom:4}}>Entries: <span style={{fontWeight:700}}>{matGroups[v].count}</span></div>
               <div style={{fontSize:14,color:C.g500,marginBottom:18}}>Total: <span style={{fontWeight:700,color:C.dark}}>{fmt(matGroups[v].total)}</span></div>
               <div style={{display:"flex",gap:10}}>
@@ -1904,7 +1909,8 @@ function Ledger({ materialEntries, labourEntries }) {
           {uniqueContractors.length === 0 && <div style={{color: C.g400, padding: 20}}>No labour entries found.</div>}
           {uniqueContractors.map(c => (
             <Card key={c} style={{padding:20}}>
-              <div style={{fontWeight:800,fontSize:18,color:C.dark,marginBottom:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={c}>{c}</div>
+              <div style={{fontWeight:800,fontSize:18,color:C.dark,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={c}>{c}</div>
+              <div style={{fontSize: 10, color: C.g400, fontStyle: "italic", marginBottom: 6}}>{fmtDate(labGroups[c].latestAt)}</div>
               <div style={{fontSize:12,color:C.g400,marginBottom:14,height:34,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
                 Work Types: {Array.from(labGroups[c].workTypes).join(", ") || "N/A"}
               </div>
