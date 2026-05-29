@@ -264,7 +264,7 @@ function Tabs({tabs,active,onChange}){
   return(
     <div style={{display:"flex",gap:6,background:C.pistaPale,padding:5,borderRadius:12,marginBottom:20,flexWrap:"wrap"}}>
       {tabs.map(([id,label])=>(
-        <button key={id} onClick={()=>onChange(id)} style={{padding:"9px 18px",borderRadius:9,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit",background:active===id?C.sageDark:"transparent",color:active===id?"#fff":C.g500,transition:"all 0.18s",boxShadow:active===id?C.sh:"none"}}>
+        <button key={id} onClick={()=>onChange(id)} style={{flex:1,textAlign:"center",padding:"9px 18px",borderRadius:9,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit",background:active===id?C.sageDark:"transparent",color:active===id?"#fff":C.g500,transition:"all 0.18s",boxShadow:active===id?C.sh:"none"}}>
           {label}
         </button>
       ))}
