@@ -23,6 +23,15 @@ const C = {
 };
 
 const fmt = n => n>=10000000?`₹${(n/10000000).toFixed(2)}Cr`:n>=100000?`₹${(n/100000).toFixed(1)}L`:`₹${Number(n).toLocaleString("en-IN")}`;
+const fmtDate = (ts) => {
+  if (!ts) return "N/A";
+  let d;
+  if (typeof ts === 'object' && ts.seconds) d = new Date(ts.seconds * 1000);
+  else if (typeof ts === 'object' && ts.toDate) d = ts.toDate();
+  else d = new Date(ts);
+  if (isNaN(d.getTime())) return "N/A";
+  return d.toLocaleString("en-IN", { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+};
 
 const INIT_SITES = {
   completed:[
@@ -1320,14 +1329,15 @@ function Sites({user, sites, materialEntries, labourEntries}){
       {tab==="ongoing"&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
           {sites.ongoing.length===0&&<div style={{padding:40,color:C.g400,fontSize:14,gridColumn:"1/-1",textAlign:"center"}}>No ongoing sites. Click "Add New Site" to start.</div>}
-          {sites.ongoing.map(s=>{
+          {[...sites.ongoing].sort((a,b)=>b.id-a.id).map(s=>{
             const rem=(s.payment?.totalDeal||0)-(s.payment?.paid||0);
             return(
               <Card key={s.id} style={{padding:20,borderTop:`4px solid ${C.pista}`,position:"relative"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                   <div style={{fontWeight:800,fontSize:14,color:C.dark,lineHeight:1.3,flex:1,marginRight:8}}>{s.name}</div>
                   <Bdg s="Under Process"/>
                 </div>
+                <div style={{fontSize: 10, color: C.g400, fontStyle: "italic", marginBottom: 8}}>{fmtDate(s.createdAt?.toDate ? s.createdAt.toDate() : s.id)}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>👤 {s.client} · 📞 {s.contact}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>📍 {s.address}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:12}}>📅 {s.startDate} → {s.estCompletion}</div>
@@ -1385,7 +1395,11 @@ function Sites({user, sites, materialEntries, labourEntries}){
                   return parseDate(b.endDate) - parseDate(a.endDate);
                 }).map(s=>{
                   const cells = [
-                    <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>,s.client,s.contact,s.address
+                    <div style={{display:"flex", flexDirection:"column"}}>
+                      <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>
+                      <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(s.createdAt?.toDate ? s.createdAt.toDate() : s.id)}</span>
+                    </div>,
+                    s.client,s.contact,s.address
                   ];
                   if (user?.role === "Admin") {
                     cells.push(<span style={{fontWeight:700,color:C.green}}>{fmt(s.totalCost)}</span>);
@@ -1777,7 +1791,12 @@ function LedgerDetailTable({ type, name, entries }) {
         <Tbl 
           cols={type === "Material" ? ["Sr. No", "Site Name", "Material Name", "Bill (₹)", "Paid (₹)", "Due (₹)"] : ["Sr. No", "Site Name", "Work Type", "Rate (₹)", "Paid (₹)", "Due (₹)"]}
           rows={filtered.map((e, i) => [
-            i+1, e.siteName || "N/A", type === "Material" ? (e.material || "N/A") : (e.workType || "N/A"),
+            i+1, 
+            <div style={{display:"flex", flexDirection:"column"}}>
+              <span>{e.siteName || "N/A"}</span>
+              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(e.createdAt?.toDate ? e.createdAt.toDate() : e.id)}</span>
+            </div>, 
+            type === "Material" ? (e.material || "N/A") : (e.workType || "N/A"),
             <span style={{fontWeight:700}}>{fmt(type === "Material" ? (e.rate * e.quantity) : e.amount)}</span>,
             <span style={{fontWeight:700,color:C.green}}>{fmt(e.paid || 0)}</span>,
             <span style={{fontWeight:700,color:C.red}}>{fmt(e.due || 0)}</span>
@@ -1939,9 +1958,14 @@ function Transactions({user, sites, labourEntries}){
       {tab==="clients"&&user?.role === "Admin"&&(
         <Card>
           <Tbl cols={["Client","Site","Total Deal","Paid","Unpaid","Extra","Actions"]}
-            rows={[...sites.ongoing,...sites.completed].map(s=>{
+            rows={[...sites.ongoing,...sites.completed].sort((a,b)=>b.id-a.id).map(s=>{
               const total=s.payment?s.payment.totalDeal:s.totalCost,paid=s.payment?s.payment.paid:s.totalCost,unpaid=Math.max(0,total-paid),extra=Math.max(0,paid-total);
-              return[<span style={{fontWeight:700}}>{s.client}</span>,s.name,fmt(total),<span style={{fontWeight:700,color:C.green}}>{fmt(paid)}</span>,<span style={{fontWeight:700,color:unpaid>0?C.red:C.green}}>{fmt(unpaid)}</span>,<span style={{color:C.gold,fontWeight:700}}>{fmt(extra)}</span>,
+              return[
+                <div style={{display:"flex", flexDirection:"column"}}>
+                  <span style={{fontWeight:700}}>{s.client}</span>
+                  <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(s.createdAt?.toDate ? s.createdAt.toDate() : s.id)}</span>
+                </div>,
+                s.name,fmt(total),<span style={{fontWeight:700,color:C.green}}>{fmt(paid)}</span>,<span style={{fontWeight:700,color:unpaid>0?C.red:C.green}}>{fmt(unpaid)}</span>,<span style={{color:C.gold,fontWeight:700}}>{fmt(extra)}</span>,
                 s.payment?<Btn small v="secondary" onClick={()=>{setEditTxn(s.id);setTxnForm({siteId:s.name,amount:"",type:"Cash",date:""});}}>+ Pay</Btn>:null
               ];
             })}/>
@@ -1951,8 +1975,12 @@ function Transactions({user, sites, labourEntries}){
       {tab==="contractors"&&(
         <Card>
           <Tbl cols={["Contractor","Site","Work","Total","Paid","Remaining","Status","Actions"]}
-            rows={activeLabourEntries.map(l => [
-              <span style={{fontWeight:700}}>{l.contractor}</span>, l.siteName, l.workType, fmt(l.amount || l.total),
+            rows={[...activeLabourEntries].sort((a,b)=>new Date(b.createdAt?.toDate()||b.id||0)-new Date(a.createdAt?.toDate()||a.id||0)).map(l => [
+              <div style={{display:"flex", flexDirection:"column"}}>
+                <span style={{fontWeight:700}}>{l.contractor}</span>
+                <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(l.createdAt?.toDate ? l.createdAt.toDate() : l.id)}</span>
+              </div>, 
+              l.siteName, l.workType, fmt(l.amount || l.total),
               <span style={{color:C.green,fontWeight:700}}>{fmt(l.paid || l.advance)}</span>,
               <span style={{color:C.red,fontWeight:700}}>{fmt(l.due || l.remaining)}</span>,
               <Bdg s={l.status}/>,
@@ -2019,7 +2047,7 @@ function Vouchers({materialEntries, labourEntries}){
   const all = [
     ...materialEntries.map(m => ({ ...m, type: "Material", desc: m.material, nameOrVendor: m.vendor })),
     ...labourEntries.map(l => ({ ...l, type: "Labour", desc: l.workType, nameOrVendor: l.contractor }))
-  ].sort((a,b) => new Date(b.createdAt?.toDate() || 0) - new Date(a.createdAt?.toDate() || 0));
+  ].sort((a,b) => new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0));
 
   let n=1;
   const list=all.map(b=>({n:n++, ...b})).filter(v=>(v.siteName?.toLowerCase()||"").includes(search.toLowerCase())||(v.nameOrVendor?.toLowerCase()||"").includes(search.toLowerCase()));
@@ -2034,7 +2062,10 @@ function Vouchers({materialEntries, labourEntries}){
           rows={list.map(v=>[
             <span style={{color:C.g400,fontSize:12}}>{v.n}</span>,
             <Bdg s={v.type}/>,
-            <span style={{fontSize:12,color:C.g400}}>{v.date ? new Date(v.date).toLocaleDateString("en-IN") : "N/A"}</span>,
+            <div style={{display:"flex", flexDirection:"column"}}>
+              <span style={{fontSize:12,color:C.g400}}>{v.date ? new Date(v.date).toLocaleDateString("en-IN") : "N/A"}</span>
+              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(v.createdAt?.toDate ? v.createdAt.toDate() : v.id)}</span>
+            </div>,
             <span style={{fontSize:12,color:C.g500}}>{v.siteName || "N/A"}</span>,
             <span style={{fontWeight:600}}>{v.nameOrVendor || "N/A"}</span>,
             v.desc || "N/A",
@@ -2094,7 +2125,9 @@ function Clients({user, clients, sites}){
     }
   });
 
-  const list = allClients.filter(c => (filter === "All" || c.status === filter) && c.name.toLowerCase().includes(search.toLowerCase()));
+  const list = allClients
+    .filter(c => (filter === "All" || c.status === filter) && c.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b) => Number(b.id.toString().replace('site-','')) - Number(a.id.toString().replace('site-','')));
 
   async function save(isEdit){
     if(!form.name)return;
@@ -2129,10 +2162,11 @@ function Clients({user, clients, sites}){
         {list.map(c=>(
           <Card key={c.id} style={{padding:20,borderTop:`4px solid ${c.status==="Completed"?C.green:C.blueDeep}`}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:C.pistaPale,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:C.sageDark,border:`2px solid ${C.pistaLight}`}}>{c.name[0]}</div>
+              <div style={{width:44,height:44,flexShrink:0,borderRadius:"50%",background:C.pistaPale,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:C.sageDark,border:`2px solid ${C.pistaLight}`}}>{c.name[0]}</div>
               <div>
                 <div style={{fontWeight:800,fontSize:15,color:C.dark}}>{c.name}</div>
                 <div style={{fontSize:13,color:C.g400}}>📞 {c.mobile}</div>
+                <div style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(Number(c.id.toString().replace('site-','')))}</div>
               </div>
               <div style={{marginLeft:"auto"}}><Bdg s={c.status}/></div>
             </div>
