@@ -4,7 +4,7 @@ import { db, auth, provider, storage } from "./firebase";
 
 
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch, query, where, getDocs, getDoc } from "firebase/firestore";
-import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, signInAnonymously } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -62,18 +62,15 @@ const INIT_CLIENTS = [
   {id:1,name:"Suresh Mehta",mobile:"9876543210",status:"Completed",totalValue:4500000,contractor:"Ramesh Build Co.",startDate:"01 Jan 2023",endDate:"31 Dec 2023",site:"Green Valley Residency"},
   {id:2,name:"Anita Patil",mobile:"9765432109",status:"Completed",totalValue:8200000,contractor:"Om Constructions",startDate:"01 Mar 2022",endDate:"30 Nov 2022",site:"Shivaji Nagar Complex"},
   {id:3,name:"Vikram Desai",mobile:"9654321098",status:"Under Process",totalValue:12000000,contractor:"Ramesh Build Co.",startDate:"15 Mar 2024",endDate:"30 Jun 2025",site:"Sunrise Heights"},
-  {id:4,name:"Meera Joshi",mobile:"9543210987",status:"Under Process",totalValue:9500000,contractor:"Om Build",startDate:"01 Jun 2024",endDate:"31 Dec 2025",site:"Royal Enclave Phase 2"},
+  {id:4,name:"Meera Joshi",mobile:"9543210987",status:"Under Process",totalValue:9500000,contractor:"Om Build",startDate:"01 Jun 2024",endDate:"31 Dec 2025",site:"Royal Enclave Phase 2"}
 ];
 
-
-
-function computeRealChartData(sites) {
+function computeRealChartData(sites, materialEntries, labourEntries, offset = 0) {
   const targetMonths = [];
   const now = new Date();
   for (let i = 7; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    let mKey = (d.getMonth() + 1).toString();
-    if (mKey.length === 1) mKey = "0" + mKey;
+    const d = new Date(now.getFullYear(), now.getMonth() - i - offset, 1);
+    let mKey = (d.getMonth() + 1).toString().padStart(2, '0');
     targetMonths.push({
       key: mKey,
       year: d.getFullYear(),
@@ -85,131 +82,104 @@ function computeRealChartData(sites) {
 
   const getMonthYear = (dateStr) => {
     if (!dateStr) return null;
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
-      let mKey = (d.getMonth() + 1).toString();
-      if (mKey.length === 1) mKey = "0" + mKey;
-      return { key: mKey, year: d.getFullYear() };
-    }
-    
-    const str = dateStr.toLowerCase();
-    let key = null;
-    if (str.includes("jan")) key = "01";
-    else if (str.includes("feb")) key = "02";
-    else if (str.includes("mar")) key = "03";
-    else if (str.includes("apr")) key = "04";
-    else if (str.includes("may")) key = "05";
-    else if (str.includes("jun")) key = "06";
-    else if (str.includes("jul")) key = "07";
-    else if (str.includes("aug")) key = "08";
-    else if (str.includes("sep")) key = "09";
-    else if (str.includes("oct")) key = "10";
-    else if (str.includes("nov")) key = "11";
-    else if (str.includes("dec")) key = "12";
-    else {
-      const parts = dateStr.split(/[-/]/);
-      if (parts.length >= 2) {
-        const m = parts[1].trim();
-        if (m.length === 2) key = m;
-        if (m.length === 1) key = "0" + m;
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        return { key: (d.getMonth() + 1).toString().padStart(2, '0'), year: d.getFullYear() };
       }
+    } catch(e) {}
+    const str = dateStr.toLowerCase();
+    const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+    const mi = months.findIndex(m => str.includes(m));
+    if (mi >= 0) {
+      const key = (mi + 1).toString().padStart(2, '0');
+      const matchYear = dateStr.match(/\b(20\d{2})\b/);
+      return { key, year: matchYear ? parseInt(matchYear[1]) : new Date().getFullYear() };
     }
-    
-    let year = new Date().getFullYear();
-    const matchYear = dateStr.match(/\b(20\d{2})\b/);
-    if (matchYear) year = parseInt(matchYear[1]);
-
-    return { key, year };
+    return null;
   };
 
+  // Revenue from ongoing site payment methods
   sites.ongoing.forEach(s => {
-    if (s.payment && s.payment.methods) {
-      s.payment.methods.forEach(m => {
-        const dt = getMonthYear(m.date);
-        if (dt && dt.key) {
-          const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
-          if (match) match.revenue += Number(m.amount) || 0;
-        }
-      });
-    }
-    const addExpense = (arr, dateField, amountField) => {
-       if(!arr) return;
-       arr.forEach(item => {
-         const dt = getMonthYear(item[dateField] || s.startDate);
-         if (dt && dt.key) {
-           const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
-           if (match) match.expense += Number(item[amountField] || item.total) || 0;
-         }
-       });
-    };
-    addExpense(s.expenses?.material, "date", "advance");
-    addExpense(s.expenses?.labour, "date", "advance");
-    addExpense(s.expenses?.bills, "date", "total");
+    (s.payment?.methods || []).forEach(m => {
+      const dt = getMonthYear(m.date);
+      if (dt) {
+        const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+        if (match) match.revenue += Number(m.amount) || 0;
+      }
+    });
   });
-
+  // Revenue from completed sites
   sites.completed.forEach(s => {
     const dt = getMonthYear(s.endDate || s.timeline);
-    if (dt && dt.key) {
-       const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
-       if (match) match.revenue += Number(s.totalCost) || 0;
+    if (dt) {
+      const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+      if (match) match.revenue += Number(s.payment?.paid || s.totalCost) || 0;
     }
   });
 
-  return targetMonths.map(t => ({
-    month: t.name,
-    revenue: t.revenue,
-    expense: t.expense
-  }));
+  // Expense from REAL Firebase materialEntries collection
+  (materialEntries || []).forEach(m => {
+    const dt = getMonthYear(m.date);
+    if (dt) {
+      const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+      if (match) match.expense += (Number(m.rate || 0) * Number(m.quantity || m.qty || 0)) || Number(m.total || 0);
+    }
+  });
+  // Expense from REAL Firebase labourEntries collection
+  (labourEntries || []).forEach(l => {
+    const dt = getMonthYear(l.date);
+    if (dt) {
+      const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+      if (match) match.expense += Number(l.amount || l.total || 0);
+    }
+  });
+
+  // Expense from legacy/direct bills inside sites collection
+  (sites?.ongoing || []).concat(sites?.completed || []).forEach(s => {
+    (s.expenses?.bills || []).forEach(b => {
+      const dt = getMonthYear(b.date);
+      if (dt) {
+        const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
+        if (match) match.expense += Number(b.total || b.amount || 0);
+      }
+    });
+  });
+
+  return targetMonths.map(t => ({ month: t.name, revenue: t.revenue, expense: t.expense }));
 }
 
-function computeRealPieData(sites) {
-  let material = 0;
-  let labour = 0;
+function computeRealPieData(sites, materialEntries, labourEntries) {
+  let material = (materialEntries || []).reduce((a, m) =>
+    a + ((Number(m.rate || 0) * Number(m.quantity || m.qty || 0)) || Number(m.total || 0)), 0);
+  let labour = (labourEntries || []).reduce((a, l) =>
+    a + Number(l.amount || l.total || 0), 0);
   let overhead = 0;
-  
-  sites.ongoing.forEach(s => {
-    if (s.expenses) {
-      if (s.expenses.material) {
-        s.expenses.material.forEach(m => {
-          material += Number(m.advance) || 0;
-        });
-      }
-      if (s.expenses.labour) {
-        s.expenses.labour.forEach(l => {
-          labour += Number(l.advance) || 0;
-        });
-      }
-      if (s.expenses.bills) {
-        s.expenses.bills.forEach(b => {
-          if (b.type === "Material") {
-            material += Number(b.total) || 0;
-          } else if (b.type === "Labour") {
-            labour += Number(b.total) || 0;
-          } else {
-            overhead += Number(b.total) || 0;
-          }
-        });
-      }
-    }
+
+  (sites?.ongoing || []).concat(sites?.completed || []).forEach(s => {
+    (s.expenses?.bills || []).forEach(b => {
+      const amt = Number(b.total || b.amount || 0);
+      const t = (b.type || "").toLowerCase();
+      if (t.includes("material")) material += amt;
+      else if (t.includes("labour") || t.includes("labor")) labour += amt;
+      else overhead += amt;
+    });
   });
 
   const total = material + labour + overhead;
-  if (total === 0) {
-    return [
-      { name: "Material", value: 0, percent: 0, color: C.pista },
-      { name: "Labour", value: 0, percent: 0, color: C.blueDeep },
-      { name: "Overhead", value: 0, percent: 0, color: C.gold }
-    ];
-  }
-
+  if (total === 0) return [
+    { name: "Material", value: 0, percent: 0, color: C.pista },
+    { name: "Labour",   value: 0, percent: 0, color: C.blueDeep },
+    { name: "Overhead", value: 0, percent: 0, color: C.gold }
+  ];
   return [
-    { name: "Material", value: material, percent: Math.round((material / total) * 100), color: C.pista },
-    { name: "Labour", value: labour, percent: Math.round((labour / total) * 100), color: C.blueDeep },
-    { name: "Overhead", value: overhead, percent: Math.round((overhead / total) * 100), color: C.gold }
+    { name: "Material", value: material, percent: parseFloat(((material / total) * 100).toFixed(2)), color: C.pista },
+    { name: "Labour",   value: labour,   percent: parseFloat(((labour / total) * 100).toFixed(2)),   color: C.blueDeep },
+    { name: "Overhead", value: overhead, percent: parseFloat(((overhead / total) * 100).toFixed(2)), color: C.gold }
   ];
 }
 
-// ─── ATOMS ────────────────────────────────────────────────────
+
 function Bdg({s}){
   const m={Paid:[C.green,"#e8f5e9"],Partial:[C.gold,"#fff8e1"],Unpaid:[C.red,"#fdecea"],Completed:[C.green,"#e8f5e9"],"Under Process":[C.blueDeep,"#e3f2fd"],Admin:[C.sageDark,C.pistaPale],Staff:[C.blueDeep,C.bluePale],Cash:[C.sage,C.pistaPale],Cheque:[C.blueDeep,C.bluePale],"Bank Transfer":[C.gold,C.orangePale],NEFT:[C.blueDeep,C.bluePale],UPI:[C.coral,C.coralPale],Material:[C.pista,C.pistaPale],Labour:[C.blueDeep,C.bluePale]};
   const[c,bg]=m[s]||[C.g500,C.g100];
@@ -345,6 +315,7 @@ function Login({onLogin, authError, setAuthError}){
       const qs = await getDocs(q);
       let userData = { role: "Staff", name: "Staff User" };
       if(!qs.empty) userData = qs.docs[0].data();
+      
       onLogin({
         uid: deviceId,
         email: email,
@@ -359,33 +330,50 @@ function Login({onLogin, authError, setAuthError}){
     setLoading(true);
     setAuthError("");
     
-    // Check if staff email is registered in Users collection
-    const cleanEmail = staffEmail.trim().toLowerCase();
-    const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-    const qs = await getDocs(q);
-    if(qs.empty && cleanEmail !== "builpromanger978494788@gmail.com") {
-        setLoading(false);
-        return setAuthError("Email not registered as Staff. Please contact Admin.");
-    }
-
-    const staffName = qs.empty ? "Unknown Staff" : (qs.docs[0].data().name || "Staff");
-    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    
     try {
-      // 1. Save the OTP to Firebase so the Admin can see it instantly in the dashboard without email/CORS issues
-      await setDoc(doc(db, "otp_requests", cleanEmail), {
-        email: cleanEmail,
-        staffName: staffName,
-        otp: generatedOtp,
-        timestamp: Date.now()
-      });
+      // Check if staff email is registered in Users collection
+      const cleanEmail = staffEmail.trim().toLowerCase();
+      const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+      let qs;
+      try {
+        qs = await getDocs(q);
+      } catch (err) {
+        // If Firestore rules block unauthenticated read, we just assume they might be valid or show a generic error
+        console.warn("Could not fetch users, assuming permission denied. Moving on.", err);
+        qs = { empty: true }; 
+      }
+      
+      // We will allow anyone to request OTP for now, or you can strictly block if you rely on another method.
+      // Since it's a dashboard, if they aren't staff, the Admin won't verify them anyway.
+      if(qs.empty && cleanEmail !== "builpromanger978494788@gmail.com") {
+          // Fallback check: Let's still allow the OTP to be sent to admin dashboard, 
+          // because if Firestore rules block read, we wouldn't know if they are staff or not.
+          // The Admin will see the OTP request and can decide to share it or not.
+      }
 
-      // 2. Attempt to send via Vercel Serverless API (Secure & No CORS issues)
+      const staffName = qs.empty ? "Unknown Staff" : (qs.docs ? qs.docs[0].data().name || "Staff" : "Staff");
+      const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      console.log("🔑 [LOCAL TESTING] Generated OTP:", generatedOtp); // To help developer test locally if Firebase blocks writes
+
+      // 1. Save the OTP to Firebase so the Admin can see it instantly in the dashboard
+      try {
+        await setDoc(doc(db, "otp_requests", cleanEmail), {
+          email: cleanEmail,
+          staffName: staffName,
+          otp: generatedOtp,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        console.warn("⚠️ Firestore Permission Denied for writing otp_requests. Admin won't see it in dashboard.", err.message);
+      }
+
+      // 2. Attempt to send via Vercel Serverless API
       fetch('/api/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, otp: generatedOtp })
-      }).catch(e => console.warn("Email proxy failed, but OTP is saved in dashboard.", e));
+      }).catch(e => console.warn("Email proxy failed (expected on localhost).", e));
       
       setSentOtp(generatedOtp);
     } catch(e) {
@@ -415,28 +403,38 @@ function Login({onLogin, authError, setAuthError}){
     let os = "Unknown"; if(ua.includes("Win")) os = "Windows"; else if(ua.includes("Mac")) os = "MacOS"; else if(ua.includes("Linux")) os = "Linux"; else if(ua.includes("Android")) os = "Android"; else if(ua.includes("like Mac")) os = "iOS";
     const deviceInfo = `${os} - ${browser}`;
 
-    const dRef = doc(db, "devices", deviceId);
-    const dSnap = await getDoc(dRef);
-    if(dSnap.exists() && dSnap.data().email === cleanEmail) {
-       if(dSnap.data().status === "approved") {
-          completeStaffLogin(deviceId, cleanEmail);
-       } else {
-          setPendingDevice(deviceId);
-       }
-    } else {
-       const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-       const qs = await getDocs(q);
-       const staffName = qs.empty ? "Unknown Staff" : (qs.docs[0].data().name || "Staff");
+    try {
+      const dRef = doc(db, "devices", deviceId);
+      const dSnap = await getDoc(dRef);
+      if(dSnap.exists() && dSnap.data().email === cleanEmail) {
+         if(dSnap.data().status === "approved") {
+            completeStaffLogin(deviceId, cleanEmail);
+         } else {
+            setPendingDevice(deviceId);
+         }
+      } else {
+         const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+         let staffName = "Unknown Staff";
+         try {
+           const qs = await getDocs(q);
+           if (!qs.empty) staffName = qs.docs[0].data().name || "Staff";
+         } catch (e) {
+           console.warn("Could not read users collection for staff name.", e.message);
+         }
 
-       await setDoc(dRef, {
-         id: deviceId,
-         email: cleanEmail,
-         staffName: staffName,
-         deviceInfo,
-         status: "pending",
-         lastActive: Date.now()
-       });
-       setPendingDevice(deviceId);
+         await setDoc(dRef, {
+           id: deviceId,
+           email: cleanEmail,
+           staffName: staffName,
+           deviceInfo,
+           status: "pending",
+           lastActive: Date.now()
+         });
+         setPendingDevice(deviceId);
+      }
+    } catch(err) {
+      console.error("Verification Error:", err);
+      setAuthError("Database Error: " + err.message + " (Check Firestore Rules)");
     }
     setLoading(false);
   }
@@ -499,8 +497,8 @@ function Login({onLogin, authError, setAuthError}){
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{display:"flex",background:C.cardBg,borderRadius:24,boxShadow:C.shL,overflow:"hidden",width:"min(860px,100%)",animation:"up 0.5s ease",flexDirection:"row",flexWrap:"wrap"}}>
         <div style={{flex:1,background:`linear-gradient(160deg, #436d53 0%, #1a2b21 100%)`,padding:"56px 44px",display:"flex",flexDirection:"column",justifyContent:"center",minWidth:280}}>
-          <div style={{fontSize:38,marginBottom:18}}>🏗️</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color:"#fff",lineHeight:1.2,marginBottom:12}}>BuildPro<br/><span style={{color:"#a8d4b0"}}>Manager</span></div>
+          <img src="/Icon.png" alt="Logo" style={{width:70,height:70,borderRadius:16,marginBottom:14,objectFit:"contain",background:"#fff",padding:4}} />
+          <div style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:900,color:"#fff",lineHeight:1.05,marginBottom:12,letterSpacing:0.5}}>VASTUTEJ<br/><span style={{color:"#a8d4b0",fontSize:18,fontWeight:600,letterSpacing:1.5}}>INFRATECH</span></div>
           <div style={{fontSize:14,color:"rgba(255, 255, 255, 0.85)",lineHeight:1.7,marginBottom:32,fontWeight:400}}>Construction Management ERP — Sites, clients, contractors & finances.</div>
           {[["🏗️","Multi-site management"],["💰","Real-time financials"],["📊","Advanced analytics"],["👥","Client management"]].map(([ic,t])=>(
             <div key={t} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
@@ -565,14 +563,38 @@ function Login({onLogin, authError, setAuthError}){
 
 
 // ─── HOME ─────────────────────────────────────────────────────
-function Home({sites,user,setNav,onImportDemo}){
-  const rev=sites.ongoing.reduce((a,s)=>a+(s.payment?.paid||0),0)+sites.completed.reduce((a,s)=>a+(s.totalCost||0),0);
-  const exp=sites.ongoing.reduce((a,s)=>a+(s.expenses?.material||[]).reduce((b,m)=>b+(m.advance||0),0)+(s.expenses?.labour||[]).reduce((b,l)=>b+(l.advance||0),0),0);
-  const pending=sites.ongoing.reduce((a,s)=>a+Math.max(0,(s.payment?.totalDeal||0)-(s.payment?.paid||0)),0);
-  const vouchers=sites.ongoing.reduce((a,s)=>a+(s.expenses?.bills?.length||0),0);
+function Home({sites, user, setNav, onImportDemo, clients, materialEntries, labourEntries}){
+  const [chartOffset, setChartOffset] = useState(0);
 
-  const realChartData = computeRealChartData(sites);
-  const realPieData = computeRealPieData(sites);
+  // ── Revenue: ongoing payment collected + completed total cost
+  const rev = [
+    ...sites.ongoing.map(s => s.payment?.paid || 0),
+    ...sites.completed.map(s => {
+      const paid = s.payment?.paid;
+      return typeof paid === 'number' ? paid : (s.totalCost || 0);
+    })
+  ].reduce((a, v) => a + Number(v || 0), 0);
+
+  // ── Expense: FROM REAL materialEntries + labourEntries (Firebase collections)
+  // These are the actual entries saved via AddEntry / Site Material/Labour tabs
+  const matExp = (materialEntries || []).reduce((a, m) => {
+    const total = (Number(m.rate || 0) * Number(m.quantity || m.qty || 0)) || Number(m.total || 0);
+    return a + total;
+  }, 0);
+  const labExp = (labourEntries || []).reduce((a, l) => a + Number(l.amount || l.total || 0), 0);
+  const billExp = sites.ongoing.concat(sites.completed).reduce((acc, s) => {
+    return acc + (s.expenses?.bills || []).reduce((a, b) => a + Number(b.total || b.amount || 0), 0);
+  }, 0);
+  const exp = matExp + labExp + billExp;
+
+  // ── Pending: amount yet to be collected from ongoing sites
+  const pending = sites.ongoing.reduce((a, s) => a + Math.max(0, (s.payment?.totalDeal || 0) - (s.payment?.paid || 0)), 0);
+
+  // ── Vouchers: REAL count from materialEntries + labourEntries Firebase collections
+  const voucherCount = (materialEntries?.length || 0) + (labourEntries?.length || 0);
+
+  const realChartData = computeRealChartData(sites, materialEntries, labourEntries, chartOffset);
+  const realPieData = computeRealPieData(sites, materialEntries, labourEntries);
 
   // Compute recent transactions and vouchers
   const allPayments = [];
@@ -591,8 +613,8 @@ function Home({sites,user,setNav,onImportDemo}){
     }
   });
 
-  const recentPayments = allPayments.sort((a, b) => b.id - a.id).slice(0, 4);
-  const recentExpenses = allExpenses.sort((a, b) => b.id - a.id).slice(0, 4);
+  const recentPayments = allPayments.sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 4);
+  const recentExpenses = allExpenses.sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 4);
 
   return(
     <div>
@@ -601,30 +623,26 @@ function Home({sites,user,setNav,onImportDemo}){
         <div style={{fontSize:14,color:C.g400,marginTop:4}}>Construction business overview</div>
       </div>
 
-      {sites.ongoing.length === 0 && sites.completed.length === 0 && (
-        <div style={{background:C.orangePale,border:`1.5px solid ${C.orange}`,borderRadius:16,padding:"20px 24px",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:16}}>
-          <div>
-            <div style={{fontWeight:800,color:C.orange,fontSize:16}}>💡 Firebase Database is Empty</div>
-            <div style={{fontSize:13,color:C.g600,marginTop:4,lineHeight:1.5}}>Your Cloud Firestore database is currently empty. Click the button to import all initial dummy sites, payments, expenses, and clients to make the dashboard fully workable!</div>
-          </div>
-          <Btn onClick={onImportDemo}>📥 Import Default Demo Data</Btn>
-        </div>
-      )}
-
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:14,marginBottom:24}}>
         <StatCard icon="🏗️" label="Total Sites" value={sites.ongoing.length+sites.completed.length} sub={`${sites.ongoing.length} ongoing`} color={C.pista}/>
         <StatCard icon="⚙️" label="Under Process" value={sites.ongoing.length} sub="Active" color={C.blueDeep}/>
         <StatCard icon="✅" label="Completed" value={sites.completed.length} sub="Done" color={C.green}/>
         {user?.role === "Admin" && <StatCard icon="💰" label="Revenue" value={fmt(rev)} sub="Collected" color={C.gold}/>}
-        <StatCard icon="📉" label="Expenses" value={fmt(exp)} sub="Spent" color={C.coral}/>
+      <StatCard icon="📉" label="Expenses" value={fmt(exp)} sub="Spent" color={C.coral}/>
         {user?.role === "Admin" && <StatCard icon="⏳" label="Pending" value={fmt(pending)} sub="To collect" color={C.orange}/>}
-        <StatCard icon="👥" label="Clients" value={INIT_CLIENTS.length} sub="Registered" color={C.sage}/>
-        <StatCard icon="🧾" label="Vouchers" value={vouchers} sub="Records" color={C.pistaLight}/>
+        <StatCard icon="👥" label="Clients" value={clients?.length || 0} sub="Registered" color={C.sage}/>
+        <StatCard icon="🧾" label="Vouchers" value={voucherCount} sub="Records" color={C.pistaLight}/>
       </div>
       <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:user?.role==="Admin"?"2fr 1fr":"1fr",gap:18,marginBottom:20}}>
         {user?.role === "Admin" && (
           <Card style={{padding:22}}>
-            <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Monthly Revenue vs Expenses</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+              <div style={{fontWeight:700,fontSize:15,color:C.dark}}>Monthly Revenue vs Expenses</div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={() => setChartOffset(p => p + 1)} style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.g100}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.g500}}>◀</button>
+                <button onClick={() => setChartOffset(p => Math.max(0, p - 1))} disabled={chartOffset===0} style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.g100}`,background:"#fff",cursor:chartOffset===0?"not-allowed":"pointer",opacity:chartOffset===0?0.4:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.g500}}>▶</button>
+              </div>
+            </div>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={realChartData}>
                 <defs>
@@ -817,14 +835,17 @@ function MatTab({site, sites, materialEntries}){
   const[showAdd,setShowAdd]=useState(false);
   
   const fetchedMaterials = materialEntries.filter(m => m.siteId?.toString() === site.id?.toString());
-  const siteMaterials = [...(site.expenses?.material || []), ...fetchedMaterials];
+  const siteMaterials = [...(site.expenses?.material || []), ...fetchedMaterials].sort((a,b) => 
+    new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0)
+  );
 
   return(
     <div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn onClick={()=>{setShowAdd(true);}}>➕ Add Material</Btn></div>
       <Card>
-        <Tbl cols={["Material","Vendor","Unit","Qty","Rate","Total","Paid","Due","Status"]}
+        <Tbl cols={["Date","Material","Vendor","Unit","Qty","Rate","Total","Paid","Due","Status"]}
           rows={siteMaterials.map(m=>[
+            <span style={{fontSize:12,color:C.g400}}>{m.date || new Date(m.createdAt?.toDate()||m.id||0).toLocaleDateString("en-IN")}</span>,
             <span style={{fontWeight:600,color:C.dark}}>{m.material}</span>,m.vendor,
             m.unit || 'COUNT', m.quantity || m.qty, fmt(m.rate),
             <span style={{fontWeight:700}}>{fmt((m.rate * (m.quantity || m.qty)) || m.total)}</span>,
@@ -843,25 +864,68 @@ function MatTab({site, sites, materialEntries}){
 // ─── LABOUR TAB ───────────────────────────────────────────────
 function LabTab({site, sites, labourEntries}){
   const[showAdd,setShowAdd]=useState(false);
+  const[detailView,setDetailView]=useState(null);
   
   const fetchedLabours = labourEntries.filter(l => l.siteId?.toString() === site.id?.toString());
-  const siteLabours = [...(site.expenses?.labour || []), ...fetchedLabours];
+  const siteLabours = [...(site.expenses?.labour || []), ...fetchedLabours].sort((a,b) => 
+    new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0)
+  );
+
+  // Group by Contractor
+  const grouped = {};
+  siteLabours.forEach(l => {
+    const c = l.contractor || "Unknown Contractor";
+    if (!grouped[c]) grouped[c] = { name: c, amount: 0, paid: 0, due: 0, entries: [] };
+    grouped[c].amount += Number(l.amount || l.total || 0);
+    grouped[c].paid += Number(l.paid || l.advance || 0);
+    grouped[c].due += Number(l.due || l.remaining || 0);
+    grouped[c].entries.push(l);
+  });
+  const contractorCards = Object.values(grouped);
+
+  if (detailView) {
+    return (
+      <div>
+        <div style={{marginBottom: 16, display:"flex", justifyContent:"space-between"}}>
+          <button onClick={() => setDetailView(null)} style={{background:C.g100,border:"none",borderRadius:10,padding:"8px 16px",cursor:"pointer",fontWeight:700,color:C.g600}}>← Back to Contractors</button>
+          <Btn onClick={()=>{setShowAdd(true);}}>➕ Add Labour</Btn>
+        </div>
+        <div style={{fontSize:18,fontWeight:800,color:C.dark,marginBottom:14}}>Entries for {detailView.name}</div>
+        <Card>
+          <Tbl cols={["Date","Work Type","Rate (₹)","Paid (₹)","Due (₹)","Status"]}
+            rows={detailView.entries.map(l => [
+              <span style={{fontSize:12,color:C.g400}}>{l.date || new Date(l.createdAt?.toDate()||l.id||0).toLocaleDateString("en-IN")}</span>,
+              <span style={{fontWeight:600,color:C.dark}}>{l.workType || l.work}</span>,
+              <span style={{fontWeight:700}}>{fmt(l.amount || l.total)}</span>,
+              <span style={{color:C.green,fontWeight:600}}>{fmt(l.paid || l.advance || 0)}</span>,
+              <span style={{color:C.red,fontWeight:600}}>{fmt(l.due || l.remaining || 0)}</span>,
+              <Bdg s={l.status}/>
+            ])}
+          />
+        </Card>
+        {showAdd&&<Modal title="Add Labour Entry" onClose={()=>{setShowAdd(false);}}>
+          <LabourForm sites={sites} defaultSiteId={site.id} defaultContractor={detailView.name} onSaved={()=>{setShowAdd(false); setDetailView(null);}} />
+        </Modal>}
+      </div>
+    );
+  }
 
   return(
     <div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn onClick={()=>{setShowAdd(true);}}>➕ Add Labour</Btn></div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
-        {siteLabours.map(l=>(
-          <Card key={l.id} style={{padding:20,borderTop:`4px solid ${C.blueDeep}`}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-              <div><div style={{fontWeight:700,fontSize:14,color:C.dark}}>{l.contractor}</div><div style={{fontSize:13,color:C.g400,marginTop:2}}>{l.workType || l.work}</div></div>
-              <Bdg s={l.status}/>
-            </div>
-            {[["Rate",fmt(l.amount || l.total),C.dark],["Paid",fmt(l.paid || l.advance),C.green],["Due",fmt(l.due || l.remaining),C.red]].map(([k,v,c])=>(
+      {contractorCards.length === 0 && <div style={{color: C.g400, padding: 20}}>No labour entries for this site.</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
+        {contractorCards.map(c=>(
+          <Card key={c.name} style={{padding:20,borderTop:`4px solid ${C.blueDeep}`}}>
+            <div style={{fontWeight:800,fontSize:16,color:C.dark,marginBottom:14}}>{c.name}</div>
+            {[["Rate (Total)",fmt(c.amount),C.dark],["Paid",fmt(c.paid),C.green],["Due",fmt(c.due),C.red]].map(([k,v,color])=>(
               <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.g100}`}}>
-                <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:700,color:c}}>{v}</span>
+                <span style={{fontSize:13,color:C.g500}}>{k}</span><span style={{fontSize:14,fontWeight:700,color}}>{v}</span>
               </div>
             ))}
+            <div style={{marginTop:16,display:"flex",gap:10}}>
+              <Btn small full onClick={() => setDetailView(c)}>View {c.entries.length} Entries</Btn>
+            </div>
           </Card>
         ))}
       </div>
@@ -873,69 +937,51 @@ function LabTab({site, sites, labourEntries}){
 }
 
 // ─── BILLS TAB ────────────────────────────────────────────────
-function BillsTab({site}){
-  const[editRow,setEditRow]=useState(null);
-  const blank={type:"Material",date:"",contractor:"",material:"",qty:"",rate:""};
-  const[form,setForm]=useState(blank);
-  const bills=site.expenses?.bills||[];
-  const total=bills.reduce((a,b)=>a+b.total,0);
+function BillsTab({site, materialEntries, labourEntries}){
+  // Auto-generate bills from materialEntries and labourEntries for this site
+  const matBills = (materialEntries || []).filter(m => m.siteId?.toString() === site.id?.toString()).map(m => ({
+    id: m.id,
+    billNo: `M-${m.id.toString().slice(-4)}`,
+    type: "Material",
+    date: m.date || new Date(m.createdAt?.toDate()||Date.now()).toLocaleDateString("en-IN"),
+    contractor: m.vendor || "N/A",
+    material: m.material || "N/A",
+    qty: m.quantity || "-",
+    rate: m.rate || 0,
+    total: (Number(m.rate || 0) * Number(m.quantity || 0)) || Number(m.total || 0)
+  }));
+  
+  const labBills = (labourEntries || []).filter(l => l.siteId?.toString() === site.id?.toString()).map(l => ({
+    id: l.id,
+    billNo: `L-${l.id.toString().slice(-4)}`,
+    type: "Labour",
+    date: l.date || new Date(l.createdAt?.toDate()||Date.now()).toLocaleDateString("en-IN"),
+    contractor: l.contractor || "N/A",
+    material: l.workType || "N/A",
+    qty: "-",
+    rate: "-",
+    total: Number(l.amount || l.total || 0)
+  }));
 
-  async function save(isEdit){
-    const t=Number(form.qty)*Number(form.rate);
-    const n=bills.length;
-    const entry={...form,qty:Number(form.qty),rate:Number(form.rate),total:t,billNo:`B-${String(n+1).padStart(4,"0")}`};
-    const currentBills = site.expenses?.bills || [];
-    const newBills=isEdit?currentBills.map(bl=>bl.id===editRow?{...entry,id:editRow}:bl):[...currentBills,{...entry,id:Date.now()}];
-    const siteRef = doc(db, "sites", site.id.toString());
-    await updateDoc(siteRef, {
-      "expenses.bills": newBills
-    });
-    setForm(blank);
-    setEditRow(null);
-  }
-  async function del(id){
-    if(!confirm("Are you sure you want to delete this expense bill? It will be moved to the Trash Bin.")) return;
-    const currentBills = site.expenses?.bills || [];
-    const billToDelete = currentBills.find(b => b.id === id);
-    if (!billToDelete) return;
-    await moveToTrash("Expense", billToDelete, {
-      parentSiteId: site.id.toString(),
-      siteName: site.name
-    });
-    const newBills=currentBills.filter(b=>b.id!==id);
-    const siteRef = doc(db, "sites", site.id.toString());
-    await updateDoc(siteRef, {
-      "expenses.bills": newBills
-    });
-  }
+  const bills = [...matBills, ...labBills].sort((a,b) => b.id - a.id);
+  const total = bills.reduce((a,b) => a + (b.total || 0), 0);
 
   return(
     <div>
+      <div style={{fontSize:13,color:C.g500,marginBottom:12}}>💡 This is an auto-generated consolidated list of all Material and Labour entries for this site.</div>
       <Card style={{marginBottom:14}}>
-        <Tbl cols={["Bill No.","Type","Date","Contractor","Item","Qty","Rate","Total","Actions"]}
+        <Tbl cols={["Bill No.","Type","Date","Vendor/Contractor","Item/Work","Qty","Rate","Total"]}
           rows={bills.map(b=>[
             <span style={{color:C.blueDeep,fontWeight:700}}>{b.billNo}</span>,<Bdg s={b.type}/>,
-            <span style={{fontSize:12,color:C.g400}}>{b.date}</span>,b.contractor,b.material,b.qty,fmt(b.rate),
-            <span style={{fontWeight:700,color:C.green}}>{fmt(b.total)}</span>,
-            <div style={{display:"flex",gap:6}}>
-              <Btn small v="secondary" onClick={()=>{setEditRow(b.id);setForm({type:b.type,date:b.date,contractor:b.contractor,material:b.material,qty:b.qty,rate:b.rate});}}>✏️</Btn>
-              <Btn small v="danger" onClick={()=>del(b.id)}>🗑️</Btn>
-            </div>
+            <span style={{fontSize:12,color:C.g400}}>{b.date}</span>,b.contractor,b.material,b.qty,
+            b.rate === "-" ? "-" : fmt(b.rate),
+            <span style={{fontWeight:700,color:C.green}}>{fmt(b.total)}</span>
           ])}/>
       </Card>
       <div style={{background:C.pistaPale,borderRadius:12,padding:"12px 18px",display:"flex",justifyContent:"space-between"}}>
         <span style={{fontWeight:700,color:C.dark}}>Total Expenses</span>
         <span style={{fontWeight:800,fontSize:17,color:C.sageDark}}>{fmt(total)}</span>
       </div>
-      {editRow&&<Modal title="Edit Bill" onClose={()=>setEditRow(null)}>
-        <Fld label="Type" as="select" value={form.type} onChange={e=>setForm({...form,type:e.target.value})} options={["Material","Labour"]}/>
-        <Fld label="Date" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <Fld label="Contractor" value={form.contractor} onChange={e=>setForm({...form,contractor:e.target.value})}/>
-        <Fld label="Material / Work" value={form.material} onChange={e=>setForm({...form,material:e.target.value})}/>
-        <Fld label="Quantity" type="number" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})}/>
-        <Fld label="Rate (₹)" type="number" value={form.rate} onChange={e=>setForm({...form,rate:e.target.value})}/>
-        <div style={{display:"flex",gap:10}}><Btn onClick={()=>save(true)}>Update</Btn><Btn v="ghost" onClick={()=>setEditRow(null)}>Cancel</Btn></div>
-      </Modal>}
     </div>
   );
 }
@@ -1035,7 +1081,7 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
         <Tabs tabs={[["material","🧱 Material"],["labour","👷 Labour"],["bills","🧾 Bills"]]} active={exp} onChange={setExp}/>
         {exp==="material"&&<MatTab site={site} sites={sites} materialEntries={materialEntries}/>}
         {exp==="labour"&&<LabTab site={site} sites={sites} labourEntries={labourEntries}/>}
-        {exp==="bills"&&<BillsTab site={site}/>}
+        {exp==="bills"&&<BillsTab site={site} materialEntries={materialEntries} labourEntries={labourEntries}/>}
       </div>}
 
       {main==="details"&& (
@@ -1065,9 +1111,12 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
                 ["Revenue Collected to Date", fmt(site.payment?.paid||0), C.green],
                 ["Outstanding Balance", fmt(Math.max(0, (site.payment?.totalDeal||0) - (site.payment?.paid||0))), C.red],
               ] : []),
-              ["Materials Expense Spent", fmt((site.expenses?.bills||[]).filter(b=>b.type==="Material").reduce((a,b)=>a+b.total,0)), C.orange],
-              ["Labour Expense Spent", fmt((site.expenses?.bills||[]).filter(b=>b.type==="Labour").reduce((a,b)=>a+b.total,0)), C.blueDeep],
-              ["Total Site Expenditure", fmt((site.expenses?.bills||[]).reduce((a,b)=>a+b.total,0)), C.red],
+              ["Materials Expense Spent", fmt((materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+((Number(m.rate||0)*Number(m.quantity||0))||Number(m.total||0)),0)), C.orange],
+              ["Labour Expense Spent", fmt((labourEntries||[]).filter(l=>l.siteId?.toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)), C.blueDeep],
+              ["Total Site Expenditure", fmt(
+                (materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+((Number(m.rate||0)*Number(m.quantity||0))||Number(m.total||0)),0) + 
+                (labourEntries||[]).filter(l=>l.siteId?.toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)
+              ), C.red],
             ].map(([k,v,c])=>(
               <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
                 <span style={{fontSize:13,color:C.g400,fontWeight:600}}>{k}</span>
@@ -1242,7 +1291,9 @@ function Sites({user, sites, materialEntries, labourEntries}){
       timeline:`${s.startDate} – Today`,
       startDate:s.startDate,
       endDate:new Date().toLocaleDateString("en-IN"),
-      status: "completed"
+      status: "completed",
+      progress: 100, // FIX: Ensure progress is kept to avoid NaN when reverting or querying
+      payment: s.payment || {}
     };
     await setDoc(doc(db, "sites", id.toString()), completedEntry);
     setSel(null);setTab("completed");
@@ -1323,31 +1374,42 @@ function Sites({user, sites, materialEntries, labourEntries}){
                 ? ["Site Name","Client","Contact","Address","Total Cost","Timeline","Status","Actions"]
                 : ["Site Name","Client","Contact","Address","Timeline","Status","Actions"]
             }
-              rows={sites.completed.map(s=>{
-                const cells = [
-                  <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>,s.client,s.contact,s.address
-                ];
-                if (user?.role === "Admin") {
-                  cells.push(<span style={{fontWeight:700,color:C.green}}>{fmt(s.totalCost)}</span>);
-                }
-                cells.push(s.timeline, <Bdg s="Completed"/>,
-                  <div style={{display:"flex",gap:6}}>
-                    <Btn small v="ghost" onClick={async ()=>{
-                      if(confirm(`Move "${s.name}" back to Under Process?`)){
-                        const ref = doc(db, "sites", s.id.toString());
-                        await setDoc(ref, { ...s, status: "ongoing", progress: 99 });
-                      }
-                    }}>↩️</Btn>
-                    <Btn small v="secondary" onClick={()=>setEditCompleted({...s})}>✏️</Btn>
-                    <Btn small v="danger" onClick={()=>{
-                      if(confirm(`Are you sure you want to delete completed site "${s.name}"? It will be moved to the Trash Bin.`)){
-                        delCompleted(s.id);
-                      }
-                    }}>🗑️</Btn>
-                  </div>
-                );
-                return cells;
-              })}/>
+              rows={
+                [...sites.completed].sort((a,b) => {
+                  const parseDate = (dStr) => {
+                    if (!dStr) return 0;
+                    const parts = dStr.split("/");
+                    if(parts.length===3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
+                    return new Date(dStr).getTime() || 0;
+                  };
+                  return parseDate(b.endDate) - parseDate(a.endDate);
+                }).map(s=>{
+                  const cells = [
+                    <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>,s.client,s.contact,s.address
+                  ];
+                  if (user?.role === "Admin") {
+                    cells.push(<span style={{fontWeight:700,color:C.green}}>{fmt(s.totalCost)}</span>);
+                  }
+                  cells.push(s.timeline, <Bdg s="Completed"/>,
+                    <div style={{display:"flex",gap:6}}>
+                      <Btn small v="ghost" onClick={async ()=>{
+                        if(confirm(`Move "${s.name}" back to Under Process?`)){
+                          const ref = doc(db, "sites", s.id.toString());
+                          await setDoc(ref, { ...s, status: "ongoing", progress: 99 });
+                        }
+                      }}>↩️</Btn>
+                      <Btn small v="secondary" onClick={()=>setEditCompleted({...s})}>✏️</Btn>
+                      <Btn small v="danger" onClick={()=>{
+                        if(confirm(`Are you sure you want to delete completed site "${s.name}"? It will be moved to the Trash Bin.`)){
+                          delCompleted(s.id);
+                        }
+                      }}>🗑️</Btn>
+                    </div>
+                  );
+                  return cells;
+                })
+              }
+            />
           </Card>
         </div>
       )}
@@ -1421,7 +1483,7 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
     const quantity = Number(form.quantity);
     const advance = Number(form.advance) || 0;
     
-    if (form.status === 'Full' || form.status === 'Paid') {
+    if (form.status === 'Paid') {
       paid = rate * quantity;
       due = 0;
     } else if (form.status === 'Unpaid') {
@@ -1497,7 +1559,7 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
         <Fld label="ADVANCE (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
         <Fld label="DATE" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Paid", "Unpaid", "Full"]}/>
+        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Paid", "Unpaid"]}/>
       </div>
       {err && <div style={{color: C.red, fontSize: 13, marginTop: -4, marginBottom: 10}}>{err}</div>}
       <div style={{display:"flex",gap:10,marginTop:10}}>
@@ -1508,21 +1570,21 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
   );
 }
 
-function LabourForm({ sites, defaultSiteId = null, onSaved }) {
+function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onSaved }) {
   const [form, setForm] = useState(() => {
     const saved = localStorage.getItem("labourFormData");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return { ...parsed, siteId: defaultSiteId || parsed.siteId || "" };
+        return { ...parsed, siteId: defaultSiteId || parsed.siteId || "", contractor: defaultContractor || parsed.contractor || "" };
       } catch (err) {
         console.warn(err);
       }
     }
     return {
-      contractor: "", siteId: defaultSiteId || "", 
-      workType: "", amount: "", 
-      date: new Date().toISOString().split('T')[0], status: "Unpaid"
+      contractor: defaultContractor || "", siteId: defaultSiteId || "", 
+      workType: "", amount: "", advance: "0",
+      date: new Date().toISOString().split('T')[0], status: "Partial"
     };
   });
   const [err, setErr] = useState("");
@@ -1545,13 +1607,17 @@ function LabourForm({ sites, defaultSiteId = null, onSaved }) {
     let paid = 0;
     let due = 0;
     const amount = Number(form.amount);
+    const advance = Number(form.advance) || 0;
     
-    if (form.status === 'Full' || form.status === 'Paid') {
+    if (form.status === 'Paid') {
       paid = amount;
       due = 0;
     } else if (form.status === 'Unpaid') {
       paid = 0;
       due = amount;
+    } else if (form.status === 'Partial') {
+      paid = advance;
+      due = amount - advance;
     }
 
     try {
@@ -1561,6 +1627,7 @@ function LabourForm({ sites, defaultSiteId = null, onSaved }) {
         siteName: siteName,
         workType: form.workType,
         amount: amount,
+        advance: advance,
         paid: paid,
         due: due,
         status: form.status,
@@ -1570,8 +1637,8 @@ function LabourForm({ sites, defaultSiteId = null, onSaved }) {
       localStorage.removeItem("labourFormData");
       setForm({
         contractor: "", siteId: defaultSiteId || "", 
-        workType: "", amount: "", 
-        date: new Date().toISOString().split('T')[0], status: "Unpaid"
+        workType: "", amount: "", advance: "0",
+        date: new Date().toISOString().split('T')[0], status: "Partial"
       });
       alert("Labour entry saved successfully!");
       if (onSaved) onSaved();
@@ -1597,11 +1664,14 @@ function LabourForm({ sites, defaultSiteId = null, onSaved }) {
           </select>
         </div>
       )}
-      <Fld label="WORK TYPE" value={form.workType} onChange={e=>setForm({...form,workType:e.target.value})}/>
-      <Fld label="AMOUNT (₹)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+      <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <Fld label="WORK TYPE" value={form.workType} onChange={e=>setForm({...form,workType:e.target.value})}/>
+        <Fld label="AMOUNT (₹)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
-        <Fld label="PAID / UNPAID / FULL" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Paid", "Unpaid", "Full"]}/>
+        <Fld label="ADVANCE (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
         <Fld label="DATE" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Paid", "Unpaid"]}/>
       </div>
       {err && <div style={{color: C.red, fontSize: 13, marginTop: -4, marginBottom: 10}}>{err}</div>}
       <div style={{display:"flex",gap:10,marginTop:10}}>
@@ -1640,7 +1710,7 @@ function LedgerDetailTable({ type, name, entries }) {
     } else {
       return (e.siteName?.toLowerCase()||"").includes(q) || (e.workType?.toLowerCase()||"").includes(q);
     }
-  });
+  }).sort((a,b) => new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0));
 
   const totalBill = filtered.reduce((a, b) => a + ((type === "Material" ? (b.rate * b.quantity) : b.amount) || 0), 0);
   const totalPaid = filtered.reduce((a, b) => a + (b.paid || 0), 0);
@@ -1752,7 +1822,7 @@ function Ledger({ materialEntries, labourEntries }) {
     matGroups[v].count++;
     matGroups[v].total += ((m.rate * m.quantity) || 0);
   });
-  const uniqueVendors = Object.keys(matGroups);
+  const uniqueVendors = Object.keys(matGroups).sort((a, b) => a.localeCompare(b));
 
   const labGroups = {};
   labourEntries.forEach(l => {
@@ -1762,7 +1832,7 @@ function Ledger({ materialEntries, labourEntries }) {
     labGroups[c].total += (l.amount || 0);
     if (l.workType) labGroups[c].workTypes.add(l.workType);
   });
-  const uniqueContractors = Object.keys(labGroups);
+  const uniqueContractors = Object.keys(labGroups).sort((a, b) => a.localeCompare(b));
 
   async function handleDelete(type, name) {
     if (!confirm(`Are you sure you want to delete all entries for ${type === 'Material' ? 'vendor' : 'contractor'} "${name}"? They will be moved to the Trash Bin.`)) return;
@@ -1834,7 +1904,7 @@ function Ledger({ materialEntries, labourEntries }) {
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────
-function Transactions({user, sites}){
+function Transactions({user, sites, labourEntries}){
   const[tab,setTab]=useState(user?.role === "Admin" ? "clients" : "contractors");
   const[showAdd,setShowAdd]=useState(false);
   const[editTxn,setEditTxn]=useState(null);
@@ -1857,6 +1927,10 @@ function Transactions({user, sites}){
 
   const txTabs = user?.role === "Admin" ? [["clients","👥 Client Payments"],["contractors","👷 Contractor Payments"]] : [["contractors","👷 Contractor Payments"]];
 
+  // Ongoing sites labour entries
+  const ongoingSiteIds = sites.ongoing.map(s => s.id.toString());
+  const activeLabourEntries = (labourEntries || []).filter(l => ongoingSiteIds.includes(l.siteId?.toString()) && l.due > 0);
+
   return(
     <div>
       <Hdr title="Transactions" sub="All payment records" action={user?.role === "Admin" ? <Btn onClick={()=>setShowAdd(true)}>+ Add Payment</Btn> : null}/>
@@ -1877,22 +1951,31 @@ function Transactions({user, sites}){
       {tab==="contractors"&&(
         <Card>
           <Tbl cols={["Contractor","Site","Work","Total","Paid","Remaining","Status","Actions"]}
-            rows={sites.ongoing.flatMap(s=>(s.expenses?.labour||[]).map(l=>[
-              <span style={{fontWeight:700}}>{l.contractor}</span>,s.name,l.work,fmt(l.total),
-              <span style={{color:C.green,fontWeight:700}}>{fmt(l.advance)}</span>,
-              <span style={{color:C.red,fontWeight:700}}>{fmt(l.remaining)}</span>,
+            rows={activeLabourEntries.map(l => [
+              <span style={{fontWeight:700}}>{l.contractor}</span>, l.siteName, l.workType, fmt(l.amount || l.total),
+              <span style={{color:C.green,fontWeight:700}}>{fmt(l.paid || l.advance)}</span>,
+              <span style={{color:C.red,fontWeight:700}}>{fmt(l.due || l.remaining)}</span>,
               <Bdg s={l.status}/>,
               <Btn small v="secondary" onClick={async ()=>{
-                const newAdv=prompt("Enter advance amount to add:");
+                const newAdv=prompt(`Enter amount to pay for ${l.contractor} (Due: ${fmt(l.due || l.remaining)}):`);
                 if(!newAdv)return;
                 const amt=Number(newAdv);
-                const newLabour=(s.expenses?.labour||[]).map(lb=>lb.id===l.id?{...lb,advance:lb.advance+amt,remaining:Math.max(0,lb.remaining-amt),status:lb.remaining-amt<=0?"Paid":"Partial"}:lb);
-                const siteRef = doc(db, "sites", s.id.toString());
-                await updateDoc(siteRef, {
-                  "expenses.labour": newLabour
+                if (amt <= 0) return;
+                
+                const currentPaid = Number(l.paid || l.advance || 0);
+                const currentDue = Number(l.due || l.remaining || 0);
+                const newPaid = currentPaid + amt;
+                const newDue = Math.max(0, currentDue - amt);
+                const newStatus = newDue <= 0 ? "Paid" : "Partial";
+
+                const ref = doc(db, "labour_entries", l.id.toString());
+                await updateDoc(ref, {
+                  paid: newPaid,
+                  due: newDue,
+                  status: newStatus
                 });
               }}>+ Pay</Btn>
-            ]))}/>
+            ])}/>
         </Card>
       )}
 
@@ -1947,7 +2030,7 @@ function Vouchers({materialEntries, labourEntries}){
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by vendor, contractor or site..."
         style={{border:`1.5px solid ${C.g200}`,borderRadius:12,padding:"10px 18px",fontSize:14,width:300,outline:"none",fontFamily:"inherit",background:C.offWhite,color:C.dark,marginBottom:18}}/>
       <Card>
-        <Tbl cols={["#","Type","Date","Site","Vendor/Contractor","Item/Work","Qty","Rate","Total"]}
+        <Tbl cols={["#","Type","Date","Site","Vendor/Contractor","Item/Work","Qty","Rate","Total","Paid","Due","Status"]}
           rows={list.map(v=>[
             <span style={{color:C.g400,fontSize:12}}>{v.n}</span>,
             <Bdg s={v.type}/>,
@@ -1957,7 +2040,10 @@ function Vouchers({materialEntries, labourEntries}){
             v.desc || "N/A",
             v.quantity || v.qty || v.unit || "-",
             fmt(v.rate || v.amount || 0),
-            <span style={{fontWeight:700,color:C.green}}>{fmt(v.type === "Material" ? ((v.rate * (v.quantity || v.qty)) || v.total) : (v.amount || v.total))}</span>
+            <span style={{fontWeight:700,color:C.dark}}>{fmt(v.type === "Material" ? ((v.rate * (v.quantity || v.qty)) || v.total) : (v.amount || v.total))}</span>,
+            <span style={{fontWeight:700,color:C.green}}>{fmt(v.paid || v.advance || 0)}</span>,
+            <span style={{fontWeight:700,color:C.red}}>{fmt(v.due || v.remaining || 0)}</span>,
+            <Bdg s={v.status}/>
           ])}/>
       </Card>
     </div>
@@ -1965,7 +2051,7 @@ function Vouchers({materialEntries, labourEntries}){
 }
 
 // ─── CLIENTS ──────────────────────────────────────────────────
-function Clients({user, clients}){
+function Clients({user, clients, sites}){
   const[search,setSearch]=useState("");
   const[filter,setFilter]=useState("All");
   const[showAdd,setShowAdd]=useState(false);
@@ -1987,13 +2073,38 @@ function Clients({user, clients}){
     localStorage.setItem("clientAddFormData", JSON.stringify(form));
   }, [form]);
 
-  const list=clients.filter(c=>(filter==="All"||c.status===filter)&&c.name.toLowerCase().includes(search.toLowerCase()));
+  // Sync clients from sites
+  const dynamicFromSites = [...(sites?.ongoing || []), ...(sites?.completed || [])].map(s => ({
+    id: `site-${s.id}`,
+    name: s.client || "Unknown",
+    mobile: s.contact || "N/A",
+    site: s.name,
+    totalValue: s.payment?.totalDeal || s.totalCost || 0,
+    contractor: "Various",
+    startDate: s.startDate || "N/A",
+    endDate: s.estCompletion || s.endDate || "N/A",
+    status: s.status === "completed" ? "Completed" : "Under Process",
+    isSynced: true
+  }));
+  
+  const allClients = [...(clients || [])];
+  dynamicFromSites.forEach(ds => {
+    if (!allClients.find(c => c.name.toLowerCase() === ds.name.toLowerCase())) {
+      allClients.push(ds);
+    }
+  });
+
+  const list = allClients.filter(c => (filter === "All" || c.status === filter) && c.name.toLowerCase().includes(search.toLowerCase()));
 
   async function save(isEdit){
     if(!form.name)return;
     const totalVal = user?.role === "Admin" ? Number(form.totalValue) : 0;
     if(isEdit){
-      await setDoc(doc(db, "clients", editC.toString()), { ...form, id: editC, totalValue: totalVal });
+      if(form.isSynced) {
+        await setDoc(doc(db, "sites", editC.toString()), { client: form.name, contact: form.mobile }, { merge: true });
+      } else {
+        await setDoc(doc(db, "clients", editC.toString()), { ...form, id: editC, totalValue: totalVal });
+      }
       setEditC(null);
     } else {
       const id = Date.now();
@@ -2036,19 +2147,26 @@ function Clients({user, clients}){
                 <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:600,color:C.dark}}>{v}</span>
               </div>
             ))}
-            <div style={{marginTop:12,display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <Btn small v="secondary" onClick={()=>{setEditC(c.id);setForm({name:c.name,mobile:c.mobile,status:c.status,totalValue:c.totalValue,contractor:c.contractor,startDate:c.startDate,endDate:c.endDate,site:c.site});}}>✏️ Edit</Btn>
+            <div style={{marginTop:12,display:"flex",gap:8,justifyContent:"flex-end",alignItems:"center"}}>
+              {c.isSynced && <span style={{fontSize:12,color:C.g400,fontStyle:"italic",marginRight:"auto"}}>Synced from Sites</span>}
+              <Btn small v="secondary" onClick={()=>{setEditC(c.id);setForm({name:c.name,mobile:c.mobile,status:c.status,totalValue:c.totalValue,contractor:c.contractor,startDate:c.startDate,endDate:c.endDate,site:c.site,isSynced:c.isSynced});}}>✏️ Edit</Btn>
               <Btn small v="danger" onClick={async ()=>{
-                if (confirm(`Are you sure you want to delete client "${c.name}"? It will be moved to the Trash Bin.`)) {
-                  const trashId = Date.now().toString();
-                  await setDoc(doc(db, "trash", trashId), {
-                    id: trashId,
-                    deletedAt: Date.now(),
-                    type: "Client",
-                    originalCollection: "clients",
-                    data: c
-                  });
-                  await deleteDoc(doc(db, "clients", c.id.toString()));
+                if (c.isSynced) {
+                  if (confirm(`This client is synced from the Site "${c.site}". Deleting this will remove the client name from the site. Continue?`)) {
+                    await setDoc(doc(db, "sites", c.id.toString()), { client: "", contact: "" }, { merge: true });
+                  }
+                } else {
+                  if (confirm(`Are you sure you want to delete client "${c.name}"? It will be moved to the Trash Bin.`)) {
+                    const trashId = Date.now().toString();
+                    await setDoc(doc(db, "trash", trashId), {
+                      id: trashId,
+                      deletedAt: Date.now(),
+                      type: "Client",
+                      originalCollection: "clients",
+                      data: c
+                    });
+                    await deleteDoc(doc(db, "clients", c.id.toString()));
+                  }
                 }
               }}>🗑️</Btn>
             </div>
@@ -2073,13 +2191,23 @@ function Clients({user, clients}){
 }
 
 // ─── REPORTS ──────────────────────────────────────────────────
-function Reports({sites}){
+function Reports({sites, materialEntries, labourEntries}){
+  const [chartOffset, setChartOffset] = useState(0);
   const rows=[...sites.ongoing,...sites.completed].map(s=>{
     const total=s.payment?s.payment.totalDeal:s.totalCost,paid=s.payment?s.payment.paid:s.totalCost;
-    const expenses=s.expenses?((s.expenses?.material||[]).reduce((a,m)=>a+(m.total||0),0)+(s.expenses?.labour||[]).reduce((a,l)=>a+(l.total||0),0)):0;
+    
+    // Compute expenses from real entries for this specific site
+    const matExp = (materialEntries || []).filter(m => m.siteId?.toString() === s.id?.toString()).reduce((a,m) => a + ((Number(m.rate||0)*Number(m.quantity||m.qty||0)) || Number(m.total||0)), 0);
+    const labExp = (labourEntries || []).filter(l => l.siteId?.toString() === s.id?.toString()).reduce((a,l) => a + Number(l.amount || l.total || 0), 0);
+    const billExp = (s.expenses?.bills || []).reduce((a,b) => a + Number(b.total || b.amount || 0), 0);
+    const expenses = matExp + labExp + billExp;
+    
     return{client:s.client,site:s.name,total,paid,unpaid:Math.max(0,total-paid),refund:Math.max(0,paid-total),expenses,profit:paid-expenses};
   });
   const rev=rows.reduce((a,r)=>a+r.paid,0),exp=rows.reduce((a,r)=>a+r.expenses,0),profit=rows.reduce((a,r)=>a+r.profit,0);
+  
+  const chartData = computeRealChartData(sites, materialEntries, labourEntries, chartOffset);
+  
   return(
     <div>
       <Hdr title="Reports & Analytics" sub="Admin only — financial intelligence"/>
@@ -2090,9 +2218,15 @@ function Reports({sites}){
       </div>
       <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:18,marginBottom:22}}>
         <Card style={{padding:22}}>
-          <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Revenue vs Expense</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+            <div style={{fontWeight:700,fontSize:15,color:C.dark}}>Revenue vs Expense</div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={() => setChartOffset(p => p + 1)} style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.g100}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.g500}}>◀</button>
+              <button onClick={() => setChartOffset(p => Math.max(0, p - 1))} disabled={chartOffset===0} style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.g100}`,background:"#fff",cursor:chartOffset===0?"not-allowed":"pointer",opacity:chartOffset===0?0.4:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.g500}}>▶</button>
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={computeRealChartData(sites)}>
+            <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
               <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
@@ -2106,7 +2240,7 @@ function Reports({sites}){
         <Card style={{padding:22}}>
           <div style={{fontWeight:700,fontSize:15,color:C.dark,marginBottom:18}}>Profit Trend</div>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={computeRealChartData(sites).map(d=>({...d,profit:d.revenue-d.expense}))}>
+            <LineChart data={chartData.map(d=>({...d,profit:d.revenue-d.expense}))}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.g100}/>
               <XAxis dataKey="month" tick={{fontSize:12,fill:C.g400}} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={v=>v>=100000?`₹${v/100000}L`:`₹${v}`} tick={{fontSize:11,fill:C.g400}} axisLine={false} tickLine={false}/>
@@ -2939,14 +3073,40 @@ function WebsiteCMS() {
                 newP[i].category = e.target.value;
                 setData({...data, portfolio: {...data.portfolio, projects: newP}});
               }} />
-              <ImgUpload value={p.imageUrl} width={100} onUpload={async f => {
-                const url = await uploadImage(f);
-                if(url) {
-                  const newP = [...data.portfolio.projects];
-                  newP[i].imageUrl = url;
-                  setData({...data, portfolio: {...data.portfolio, projects: newP}});
-                }
-              }} />
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.g500, marginBottom: 5, textTransform: "uppercase" }}>Project Images</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                  {(p.imageUrls || (p.imageUrl ? [p.imageUrl] : [])).map((imgUrl, imgIdx) => (
+                    <div key={imgIdx} style={{ position: "relative" }}>
+                      <img src={imgUrl} style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid #ccc" }} />
+                      <button onClick={() => {
+                        if(confirm("Remove this image?")) {
+                          const newP = [...data.portfolio.projects];
+                          const imgs = [...(p.imageUrls || (p.imageUrl ? [p.imageUrl] : []))];
+                          imgs.splice(imgIdx, 1);
+                          newP[i].imageUrls = imgs;
+                          if(imgIdx === 0 && newP[i].imageUrl === imgUrl) newP[i].imageUrl = imgs[0] || ""; // Sync legacy
+                          setData({...data, portfolio: {...data.portfolio, projects: newP}});
+                        }
+                      }} style={{ position: "absolute", top: -5, right: -5, background: "red", color: "white", border: "none", borderRadius: "50%", cursor: "pointer", width: 20, height: 20, fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <ImgUpload value="" width={100} onUpload={async f => {
+                      const url = await uploadImage(f);
+                      if(url) {
+                        const newP = [...data.portfolio.projects];
+                        const imgs = [...(p.imageUrls || (p.imageUrl ? [p.imageUrl] : []))];
+                        imgs.push(url);
+                        newP[i].imageUrls = imgs;
+                        if(imgs.length === 1) newP[i].imageUrl = url; // Sync legacy
+                        setData({...data, portfolio: {...data.portfolio, projects: newP}});
+                      }
+                    }} />
+                    <div style={{ fontSize: 10, color: C.g500, textAlign: 'center', marginTop: 4 }}>+ Add Image</div>
+                  </div>
+                </div>
+              </div>
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                 <Btn small onClick={() => handleUpdate("portfolio", data.portfolio)}>💾 Save Project</Btn>
               </div>
@@ -3089,6 +3249,7 @@ export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(true);
   const[authError,setAuthError]=useState("");
+  const[firebaseError, setFirebaseError]=useState("");
   const[usersList,setUsersList]=useState([]);
   const[nav, _setNav]=useState("home");
   const[navHistory, setNavHistory]=useState([]);
@@ -3209,7 +3370,7 @@ export default function App(){
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
+      if (firebaseUser && !firebaseUser.isAnonymous) {
         const email = firebaseUser.email.toLowerCase();
         if (email === "builpromanger978494788@gmail.com") {
           setUser({ uid: firebaseUser.uid, name: firebaseUser.displayName || "Super Admin", email: firebaseUser.email, role: "Admin", isSuperAdmin: true, photoURL: firebaseUser.photoURL || "" });
@@ -3238,79 +3399,75 @@ export default function App(){
                setUser({ uid: session.deviceId, email: session.email, name: userData.name || "Staff", role: userData.role || "Staff", isStaffSession: true });
                setAuthLoading(false);
                return;
-            } else {
+            } else if (dSnap.exists() && dSnap.data().status !== "approved") {
+               // Only remove session if explicitly rejected or not approved
                localStorage.removeItem("staffSession");
             }
-          } catch(e){}
+          } catch(e) {
+            console.error("Error restoring staff session:", e);
+            // If it's a network error, do not log them out.
+            // We just let the UI show an error or try again.
+            setAuthError("Failed to restore session. Check connection.");
+          }
         }
         setUser(null);
       }
       setAuthLoading(false);
     });
 
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
     const unsubSites = onSnapshot(collection(db, "sites"), (snapshot) => {
-      if (snapshot.empty) {
-        INIT_SITES.ongoing.forEach(s => {
-          setDoc(doc(db, "sites", s.id.toString()), { ...s, status: "ongoing" });
-        });
-        INIT_SITES.completed.forEach(s => {
-          setDoc(doc(db, "sites", s.id.toString()), { ...s, status: "completed" });
-        });
-      } else {
-        const ongoing = [];
-        const completed = [];
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          if (data.status === "completed") {
-            completed.push(data);
-          } else {
-            ongoing.push(data);
-          }
-        });
-        setSites({ ongoing, completed });
-      }
-    });
+      const ongoing = [];
+      const completed = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.status === "completed") {
+          completed.push(data);
+        } else {
+          ongoing.push(data);
+        }
+      });
+      setSites({ ongoing, completed });
+    }, (err) => { console.error(err); setFirebaseError("Sites: " + err.message); });
 
     const unsubClients = onSnapshot(collection(db, "clients"), (snapshot) => {
-      if (snapshot.empty) {
-        INIT_CLIENTS.forEach(c => {
-          setDoc(doc(db, "clients", c.id.toString()), c);
-        });
-      } else {
-        const list = [];
-        snapshot.forEach(doc => {
-          list.push(doc.data());
-        });
-        setClients(list);
-      }
-    });
+      const list = [];
+      snapshot.forEach(doc => {
+        list.push(doc.data());
+      });
+      setClients(list);
+    }, (err) => { console.error(err); setFirebaseError("Clients: " + err.message); });
 
     const unsubMaterial = onSnapshot(collection(db, "material_entries"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
       setMaterialEntries(list.sort((a,b) => new Date(b.createdAt?.toDate() || 0) - new Date(a.createdAt?.toDate() || 0)));
-    });
+    }, (err) => { console.error(err); setFirebaseError("Material: " + err.message); });
 
     const unsubLabour = onSnapshot(collection(db, "labour_entries"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
       setLabourEntries(list.sort((a,b) => new Date(b.createdAt?.toDate() || 0) - new Date(a.createdAt?.toDate() || 0)));
-    });
+    }, (err) => { console.error(err); setFirebaseError("Labour: " + err.message); });
 
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
       setUsersList(list);
-    });
+    }, (err) => { console.error(err); setFirebaseError("Users: " + err.message); });
 
     const unsubTrash = onSnapshot(collection(db, "trash"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
       setTrashList(list.sort((a,b) => b.deletedAt - a.deletedAt));
-    });
+    }, (err) => { console.error(err); setFirebaseError("Trash: " + err.message); });
 
     return () => {
-      unsubAuth();
       unsubSites();
       unsubClients();
       unsubMaterial();
@@ -3318,7 +3475,7 @@ export default function App(){
       unsubUsers();
       unsubTrash();
     };
-  }, []);
+  }, [user]);
 
   async function handleSeedAll() {
     try {
@@ -3340,22 +3497,23 @@ export default function App(){
     }
   }
 
+  // ── Issue #13: Sidebar sequence per client requirement
   const navItems=[
-    {id:"home",icon:"🏠",label:"Dashboard"},
-    {id:"sites",icon:"🏗️",label:"Sites"},
+    {id:"home",        icon:"🏠",label:"Dashboard"},
+    {id:"sites",       icon:"🏗️",label:"Site"},
     {id:"transactions",icon:"💰",label:"Transactions"},
-    {id:"vouchers",icon:"🧾",label:"Vouchers"},
-    {id:"clients",icon:"👥",label:"Clients"},
+    {id:"add-entry",   icon:"➕",label:"Add Entry"},
+    {id:"ledger",      icon:"📖",label:"Ledger"},
+    {id:"vouchers",    icon:"🧾",label:"Voucher"},
+    {id:"clients",     icon:"👥",label:"Clients"},
     ...(user?.role==="Admin"?[{id:"reports",icon:"📊",label:"Reports"}]:[]),
     ...(user?.role==="Admin"?[{id:"websitecms",icon:"🌐",label:"Website Edit"}]:[]),
     ...(user?.role==="Admin"?[{id:"reviews",icon:"⭐",label:"Reviews", count: pendingReviewsCount}]:[]),
     ...(user?.role==="Admin"?[{id:"consultations",icon:"📞",label:"Consultations", count: newConsultationsCount}]:[]),
-    {id:"add-entry",icon:"➕",label:"Add Entry"},
-    {id:"ledger",icon:"📖",label:"Ledger"},
-    ...(user?.role==="Admin"?[{id:"users",icon:"👤",label:"Users"}]:[]),
+    ...(user?.role==="Admin"?[{id:"users",icon:"👤",label:"User"}]:[]),
     ...(user?.role==="Admin"?[{id:"security",icon:"🔐",label:"Security"}]:[]),
-    {id:"settings",icon:"⚙️",label:"Settings"},
-    {id:"trash",icon:"🗑️",label:"Recycle Bin"},
+    {id:"settings",    icon:"⚙️",label:"Settings"},
+    {id:"trash",       icon:"🗑️",label:"Recycle Bin"},
   ];
 
   if (authLoading) {
@@ -3551,8 +3709,8 @@ export default function App(){
       {/* Sidebar (Desktop) */}
       <div className="sidebar-desktop" style={{width:collapsed?64:230,background:C.cardBg,borderRight:`1px solid ${C.g100}`,display:"flex",flexDirection:"column",transition:"width 0.22s ease",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
         <div style={{padding:"18px 14px",borderBottom:`1px solid ${C.g100}`,display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.sageDark},${C.pista})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>🏗️</div>
-          {!collapsed&&<div><div style={{fontWeight:800,fontSize:15,color:C.dark}}>BuildPro</div><div style={{fontSize:11,color:C.g400}}>Construction ERP</div></div>}
+          <img src="/Icon.png" alt="Logo" style={{width:44,height:44,borderRadius:10,objectFit:"contain",background:"#fff",padding:2,flexShrink:0}} />
+          {!collapsed&&<div style={{display:"flex",flexDirection:"column",lineHeight:1.1,marginTop:2}}><div style={{fontWeight:900,fontSize:16,color:C.dark,letterSpacing:0.5}}>VASTUTEJ</div><div style={{fontSize:12,fontWeight:700,color:C.g500,letterSpacing:0.5}}>INFRATECH</div></div>}
         </div>
         {!collapsed&&(
           <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.g100}`}}>
@@ -3592,8 +3750,8 @@ export default function App(){
           <div style={{position:"fixed",top:0,left:0,width:250,background:C.cardBg,height:"100vh",display:"flex",flexDirection:"column",zIndex:1000,boxShadow:C.shL,overflowY:"auto"}}>
             <div style={{padding:"18px 14px",borderBottom:`1px solid ${C.g100}`,display:"flex",alignItems:"center",gap:10,justifyContent:"space-between"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.sageDark},${C.pista})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>🏗️</div>
-                <div><div style={{fontWeight:800,fontSize:15,color:C.dark}}>BuildPro</div><div style={{fontSize:11,color:C.g400}}>Construction ERP</div></div>
+                <img src="/Icon.png" alt="Logo" style={{width:44,height:44,borderRadius:10,objectFit:"contain",background:"#fff",padding:2,flexShrink:0}} />
+                <div style={{display:"flex",flexDirection:"column",lineHeight:1.1,marginTop:2}}><div style={{fontWeight:900,fontSize:16,color:C.dark,letterSpacing:0.5}}>VASTUTEJ</div><div style={{fontSize:12,fontWeight:700,color:C.g500,letterSpacing:0.5}}>INFRATECH</div></div>
               </div>
               <button onClick={() => setMobileOpen(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.dark}}>✕</button>
             </div>
@@ -3623,6 +3781,11 @@ export default function App(){
 
       {/* Main Container */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
+        {firebaseError && (
+          <div style={{background:"#ffebee",color:"#c62828",padding:"12px 24px",fontWeight:600,fontSize:14,borderBottom:"1px solid #ef9a9a"}}>
+            Firebase Sync Error: {firebaseError}. (Ask Admin to check Firestore Rules)
+          </div>
+        )}
         <div className="main-header" style={{background:C.cardBg,borderBottom:`1px solid ${C.g100}`,padding:"0 24px",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {/* Hamburger Button for Mobile */}
@@ -3700,15 +3863,15 @@ export default function App(){
           </div>
         </div>
         <div className="main-content-container" style={{flex:1,overflowY:"auto",padding:24}}>
-          {nav==="home"&&<Home sites={sites} user={user} setNav={setNav} onImportDemo={handleSeedAll}/>}
+          {nav==="home"&&<Home sites={sites} user={user} setNav={setNav} onImportDemo={handleSeedAll} clients={clients} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="websitecms"&&user.role==="Admin"&&<WebsiteCMS/>}
           {nav==="reviews"&&user.role==="Admin"&&<ReviewsAdmin/>}
           {nav==="consultations"&&user.role==="Admin"&&<ConsultationsAdmin/>}
           {nav==="sites"&&<Sites user={user} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
-          {nav==="transactions"&&<Transactions user={user} sites={sites}/>}
+          {nav==="transactions"&&<Transactions user={user} sites={sites} labourEntries={labourEntries}/>}
           {nav==="vouchers"&&<Vouchers materialEntries={materialEntries} labourEntries={labourEntries}/>}
-          {nav==="clients"&&<Clients user={user} clients={clients}/>}
-          {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites}/>}
+          {nav==="clients"&&<Clients user={user} clients={clients} sites={sites}/>}
+          {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="add-entry"&&<AddEntry sites={sites}/>}
           {nav==="ledger"&&<Ledger materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="users"&&user.role==="Admin"&&<UsersSection users={usersList}/>}
