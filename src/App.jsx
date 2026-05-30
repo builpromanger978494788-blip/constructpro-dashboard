@@ -1,4 +1,15 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error('ErrorBoundary caught error:', error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return <div style={{padding:20,color:'red',background:'#fee'}}><h2>Error Occurred:</h2><pre>{this.state.error?.toString()}</pre><pre>{this.state.error?.stack}</pre></div>;
+    }
+    return this.props.children;
+  }
+}
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db, auth, provider, storage } from "./firebase";
 
@@ -22,6 +33,7 @@ const C = {
   sh:"var(--sh)",shM:"var(--shM)",shL:"var(--shL)",
 };
 
+const getDt = v => v && typeof v.toDate === 'function' ? v.toDate() : v;
 const fmt = n => n>=10000000?`₹${(n/10000000).toFixed(2)}Cr`:n>=100000?`₹${(n/100000).toFixed(1)}L`:`₹${Number(n).toLocaleString("en-IN")}`;
 const fmtDate = (ts) => {
   if (!ts) return "N/A";
@@ -845,7 +857,7 @@ function MatTab({site, sites, materialEntries}){
   
   const fetchedMaterials = materialEntries.filter(m => m.siteId?.toString() === site.id?.toString());
   const siteMaterials = [...(site.expenses?.material || []), ...fetchedMaterials].sort((a,b) => 
-    new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0)
+    new Date(getDt(b.createdAt) || b.id || 0) - new Date(getDt(a.createdAt) || a.id || 0)
   );
 
   return(
@@ -854,7 +866,7 @@ function MatTab({site, sites, materialEntries}){
       <Card>
         <Tbl cols={["Date","Material","Vendor","Unit","Qty","Rate","Total","Paid","Due","Status"]}
           rows={siteMaterials.map(m=>[
-            <span style={{fontSize:12,color:C.g400}}>{m.date || new Date(m.createdAt?.toDate()||m.id||0).toLocaleDateString("en-IN")}</span>,
+            <span style={{fontSize:12,color:C.g400}}>{m.date || new Date(getDt(m.createdAt)||m.id||0).toLocaleDateString("en-IN")}</span>,
             <span style={{fontWeight:600,color:C.dark}}>{m.material}</span>,m.vendor,
             m.unit || 'COUNT', m.quantity || m.qty, fmt(m.rate),
             <span style={{fontWeight:700}}>{fmt((m.rate * (m.quantity || m.qty)) || m.total)}</span>,
@@ -875,9 +887,9 @@ function LabTab({site, sites, labourEntries}){
   const[showAdd,setShowAdd]=useState(false);
   const[detailView,setDetailView]=useState(null);
   
-  const fetchedLabours = labourEntries.filter(l => l.siteId?.toString() === site.id?.toString());
+  const fetchedLabours = labourEntries.filter(l => (l.siteId || "").toString() === site.id?.toString());
   const siteLabours = [...(site.expenses?.labour || []), ...fetchedLabours].sort((a,b) => 
-    new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0)
+    new Date(getDt(b.createdAt) || b.id || 0) - new Date(getDt(a.createdAt) || a.id || 0)
   );
 
   // Group by Contractor
@@ -903,7 +915,7 @@ function LabTab({site, sites, labourEntries}){
         <Card>
           <Tbl cols={["Date","Work Type","Rate (₹)","Paid (₹)","Due (₹)","Status"]}
             rows={detailView.entries.map(l => [
-              <span style={{fontSize:12,color:C.g400}}>{l.date || new Date(l.createdAt?.toDate()||l.id||0).toLocaleDateString("en-IN")}</span>,
+              <span style={{fontSize:12,color:C.g400}}>{l.date || new Date(getDt(l.createdAt)||l.id||0).toLocaleDateString("en-IN")}</span>,
               <span style={{fontWeight:600,color:C.dark}}>{l.workType || l.work}</span>,
               <span style={{fontWeight:700}}>{fmt(l.amount || l.total)}</span>,
               <span style={{color:C.green,fontWeight:600}}>{fmt(l.paid || l.advance || 0)}</span>,
@@ -950,9 +962,9 @@ function BillsTab({site, materialEntries, labourEntries}){
   // Auto-generate bills from materialEntries and labourEntries for this site
   const matBills = (materialEntries || []).filter(m => m.siteId?.toString() === site.id?.toString()).map(m => ({
     id: m.id,
-    billNo: `M-${m.id.toString().slice(-4)}`,
+    billNo: `M-${m.id?.toString().slice(-4)}`,
     type: "Material",
-    date: m.date || new Date(m.createdAt?.toDate()||Date.now()).toLocaleDateString("en-IN"),
+    date: m.date || new Date(getDt(m.createdAt)||Date.now()).toLocaleDateString("en-IN"),
     contractor: m.vendor || "N/A",
     material: m.material || "N/A",
     qty: m.quantity || "-",
@@ -960,11 +972,11 @@ function BillsTab({site, materialEntries, labourEntries}){
     total: (Number(m.rate || 0) * Number(m.quantity || 0)) || Number(m.total || 0)
   }));
   
-  const labBills = (labourEntries || []).filter(l => l.siteId?.toString() === site.id?.toString()).map(l => ({
+  const labBills = (labourEntries || []).filter(l => (l.siteId || "").toString() === site.id?.toString()).map(l => ({
     id: l.id,
-    billNo: `L-${l.id.toString().slice(-4)}`,
+    billNo: `L-${l.id?.toString().slice(-4)}`,
     type: "Labour",
-    date: l.date || new Date(l.createdAt?.toDate()||Date.now()).toLocaleDateString("en-IN"),
+    date: l.date || new Date(getDt(l.createdAt)||Date.now()).toLocaleDateString("en-IN"),
     contractor: l.contractor || "N/A",
     material: l.workType || "N/A",
     qty: "-",
@@ -1121,10 +1133,10 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
                 ["Outstanding Balance", fmt(Math.max(0, (site.payment?.totalDeal||0) - (site.payment?.paid||0))), C.red],
               ] : []),
               ["Materials Expense Spent", fmt((materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+((Number(m.rate||0)*Number(m.quantity||0))||Number(m.total||0)),0)), C.orange],
-              ["Labour Expense Spent", fmt((labourEntries||[]).filter(l=>l.siteId?.toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)), C.blueDeep],
+              ["Labour Expense Spent", fmt((labourEntries||[]).filter(l=>(l.siteId || "").toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)), C.blueDeep],
               ["Total Site Expenditure", fmt(
                 (materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+((Number(m.rate||0)*Number(m.quantity||0))||Number(m.total||0)),0) + 
-                (labourEntries||[]).filter(l=>l.siteId?.toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)
+                (labourEntries||[]).filter(l=>(l.siteId || "").toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)
               ), C.red],
             ].map(([k,v,c])=>(
               <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.g100}`}}>
@@ -1337,7 +1349,7 @@ function Sites({user, sites, materialEntries, labourEntries}){
                   <div style={{fontWeight:800,fontSize:14,color:C.dark,lineHeight:1.3,flex:1,marginRight:8}}>{s.name}</div>
                   <Bdg s="Under Process"/>
                 </div>
-                <div style={{fontSize: 10, color: C.g400, fontStyle: "italic", marginBottom: 8}}>{fmtDate(s.createdAt?.toDate ? s.createdAt.toDate() : s.id)}</div>
+                <div style={{fontSize: 10, color: C.g400, fontStyle: "italic", marginBottom: 8}}>{fmtDate(getDt(s.createdAt) || s.id)}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>👤 {s.client} · 📞 {s.contact}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>📍 {s.address}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:12}}>📅 {s.startDate} → {s.estCompletion}</div>
@@ -1397,7 +1409,7 @@ function Sites({user, sites, materialEntries, labourEntries}){
                   const cells = [
                     <div style={{display:"flex", flexDirection:"column"}}>
                       <span style={{fontWeight:700,color:C.dark}}>{s.name}</span>
-                      <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(s.createdAt?.toDate ? s.createdAt.toDate() : s.id)}</span>
+                      <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(s.createdAt) || s.id)}</span>
                     </div>,
                     s.client,s.contact,s.address
                   ];
@@ -1488,7 +1500,7 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
       return;
     }
     setErr("");
-    const siteObj = siteOpts.find(s => s.id.toString() === form.siteId.toString());
+    const siteObj = siteOpts.find(s => s.id?.toString() === form.siteId.toString());
     const siteName = siteObj ? siteObj.name : "Unknown Site";
     
     let paid = 0;
@@ -1615,7 +1627,7 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
       return;
     }
     setErr("");
-    const siteObj = siteOpts.find(s => s.id.toString() === form.siteId.toString());
+    const siteObj = siteOpts.find(s => s.id?.toString() === form.siteId.toString());
     const siteName = siteObj ? siteObj.name : "Unknown Site";
     
     let paid = 0;
@@ -1724,7 +1736,7 @@ function LedgerDetailTable({ type, name, entries }) {
     } else {
       return (e.siteName?.toLowerCase()||"").includes(q) || (e.workType?.toLowerCase()||"").includes(q);
     }
-  }).sort((a,b) => new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0));
+  }).sort((a,b) => new Date(getDt(b.createdAt) || b.id || 0) - new Date(getDt(a.createdAt) || a.id || 0));
 
   const totalBill = filtered.reduce((a, b) => a + ((type === "Material" ? (b.rate * b.quantity) : b.amount) || 0), 0);
   const totalPaid = filtered.reduce((a, b) => a + (b.paid || 0), 0);
@@ -1794,7 +1806,7 @@ function LedgerDetailTable({ type, name, entries }) {
             i+1, 
             <div style={{display:"flex", flexDirection:"column"}}>
               <span>{e.siteName || "N/A"}</span>
-              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(e.createdAt?.toDate ? e.createdAt.toDate() : e.id)}</span>
+              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(e.createdAt) || e.id)}</span>
             </div>, 
             type === "Material" ? (e.material || "N/A") : (e.workType || "N/A"),
             <span style={{fontWeight:700}}>{fmt(type === "Material" ? (e.rate * e.quantity) : e.amount)}</span>,
@@ -1840,7 +1852,7 @@ function Ledger({ materialEntries, labourEntries }) {
     if (!matGroups[v]) matGroups[v] = { count: 0, total: 0, latestAt: 0 };
     matGroups[v].count++;
     matGroups[v].total += ((m.rate * m.quantity) || 0);
-    const ts = new Date(m.createdAt?.toDate() || m.id || 0).getTime();
+    const ts = new Date(getDt(m.createdAt) || m.id || 0).getTime();
     if(ts > matGroups[v].latestAt) matGroups[v].latestAt = ts;
   });
   const uniqueVendors = Object.keys(matGroups).sort((a, b) => matGroups[b].latestAt - matGroups[a].latestAt);
@@ -1852,10 +1864,29 @@ function Ledger({ materialEntries, labourEntries }) {
     labGroups[c].count++;
     labGroups[c].total += (l.amount || 0);
     if (l.workType) labGroups[c].workTypes.add(l.workType);
-    const ts = new Date(l.createdAt?.toDate() || l.id || 0).getTime();
+    const ts = new Date(getDt(l.createdAt) || l.id || 0).getTime();
     if(ts > labGroups[c].latestAt) labGroups[c].latestAt = ts;
   });
   const uniqueContractors = Object.keys(labGroups).sort((a, b) => labGroups[b].latestAt - labGroups[a].latestAt);
+
+  async function handleEdit(type, oldName) {
+    const newName = prompt(`Enter new name for ${type === 'Material' ? 'vendor' : 'contractor'} "${oldName}":`, oldName);
+    if (!newName || newName.trim() === "" || newName.trim() === oldName) return;
+    
+    const entries = type === "Material" ? materialEntries.filter(m => m.vendor === oldName) : labourEntries.filter(l => l.contractor === oldName);
+    if (entries.length === 0) return;
+    
+    const batch = writeBatch(db);
+    entries.forEach(e => {
+      const ref = doc(db, type === "Material" ? "material_entries" : "labour_entries", e.id.toString());
+      if (type === "Material") {
+        batch.update(ref, { vendor: newName.trim() });
+      } else {
+        batch.update(ref, { contractor: newName.trim() });
+      }
+    });
+    await batch.commit();
+  }
 
   async function handleDelete(type, name) {
     if (!confirm(`Are you sure you want to delete all entries for ${type === 'Material' ? 'vendor' : 'contractor'} "${name}"? They will be moved to the Trash Bin.`)) return;
@@ -1897,6 +1928,7 @@ function Ledger({ materialEntries, labourEntries }) {
               <div style={{fontSize:14,color:C.g500,marginBottom:18}}>Total: <span style={{fontWeight:700,color:C.dark}}>{fmt(matGroups[v].total)}</span></div>
               <div style={{display:"flex",gap:10}}>
                 <Btn small full onClick={() => setDetailView({type: "Material", name: v})}>Open</Btn>
+                <Btn small v="secondary" onClick={() => handleEdit("Material", v)}>Edit</Btn>
                 <Btn small v="danger" onClick={() => handleDelete("Material", v)}>Delete</Btn>
               </div>
             </Card>
@@ -1918,6 +1950,7 @@ function Ledger({ materialEntries, labourEntries }) {
               <div style={{fontSize:14,color:C.g500,marginBottom:18}}>Total: <span style={{fontWeight:700,color:C.dark}}>{fmt(labGroups[c].total)}</span></div>
               <div style={{display:"flex",gap:10}}>
                 <Btn small full onClick={() => setDetailView({type: "Contractor", name: c})}>Open</Btn>
+                <Btn small v="secondary" onClick={() => handleEdit("Contractor", c)}>Edit</Btn>
                 <Btn small v="danger" onClick={() => handleDelete("Contractor", c)}>Delete</Btn>
               </div>
             </Card>
@@ -1953,8 +1986,8 @@ function Transactions({user, sites, labourEntries}){
   const txTabs = user?.role === "Admin" ? [["clients","👥 Client Payments"],["contractors","👷 Contractor Payments"]] : [["contractors","👷 Contractor Payments"]];
 
   // Ongoing sites labour entries
-  const ongoingSiteIds = sites.ongoing.map(s => s.id.toString());
-  const activeLabourEntries = (labourEntries || []).filter(l => ongoingSiteIds.includes(l.siteId?.toString()) && l.due > 0);
+  const ongoingSiteIds = sites.ongoing.map(s => s.id?.toString());
+  const activeLabourEntries = (labourEntries || []).filter(l => ongoingSiteIds.includes((l.siteId || "").toString()) && l.due > 0);
 
   return(
     <div>
@@ -1969,7 +2002,7 @@ function Transactions({user, sites, labourEntries}){
               return[
                 <div style={{display:"flex", flexDirection:"column"}}>
                   <span style={{fontWeight:700}}>{s.client}</span>
-                  <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(s.createdAt?.toDate ? s.createdAt.toDate() : s.id)}</span>
+                  <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(s.createdAt) || s.id)}</span>
                 </div>,
                 s.name,fmt(total),<span style={{fontWeight:700,color:C.green}}>{fmt(paid)}</span>,<span style={{fontWeight:700,color:unpaid>0?C.red:C.green}}>{fmt(unpaid)}</span>,<span style={{color:C.gold,fontWeight:700}}>{fmt(extra)}</span>,
                 s.payment?<Btn small v="secondary" onClick={()=>{setEditTxn(s.id);setTxnForm({siteId:s.name,amount:"",type:"Cash",date:""});}}>+ Pay</Btn>:null
@@ -1981,10 +2014,10 @@ function Transactions({user, sites, labourEntries}){
       {tab==="contractors"&&(
         <Card>
           <Tbl cols={["Contractor","Site","Work","Total","Paid","Remaining","Status","Actions"]}
-            rows={[...activeLabourEntries].sort((a,b)=>new Date(b.createdAt?.toDate()||b.id||0)-new Date(a.createdAt?.toDate()||a.id||0)).map(l => [
+            rows={[...activeLabourEntries].sort((a,b)=>new Date(getDt(b.createdAt)||b.id||0)-new Date(getDt(a.createdAt)||a.id||0)).map(l => [
               <div style={{display:"flex", flexDirection:"column"}}>
                 <span style={{fontWeight:700}}>{l.contractor}</span>
-                <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(l.createdAt?.toDate ? l.createdAt.toDate() : l.id)}</span>
+                <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(l.createdAt) || l.id)}</span>
               </div>, 
               l.siteName, l.workType, fmt(l.amount || l.total),
               <span style={{color:C.green,fontWeight:700}}>{fmt(l.paid || l.advance)}</span>,
@@ -2002,7 +2035,7 @@ function Transactions({user, sites, labourEntries}){
                 const newDue = Math.max(0, currentDue - amt);
                 const newStatus = newDue <= 0 ? "Paid" : "Partial";
 
-                const ref = doc(db, "labour_entries", l.id.toString());
+                const ref = doc(db, "labour_entries", l.id?.toString());
                 await updateDoc(ref, {
                   paid: newPaid,
                   due: newDue,
@@ -2053,7 +2086,7 @@ function Vouchers({materialEntries, labourEntries}){
   const all = [
     ...materialEntries.map(m => ({ ...m, type: "Material", desc: m.material, nameOrVendor: m.vendor })),
     ...labourEntries.map(l => ({ ...l, type: "Labour", desc: l.workType, nameOrVendor: l.contractor }))
-  ].sort((a,b) => new Date(b.createdAt?.toDate() || b.id || 0) - new Date(a.createdAt?.toDate() || a.id || 0));
+  ].sort((a,b) => new Date(getDt(b.createdAt) || b.id || 0) - new Date(getDt(a.createdAt) || a.id || 0));
 
   let n=1;
   const list=all.map(b=>({n:n++, ...b})).filter(v=>(v.siteName?.toLowerCase()||"").includes(search.toLowerCase())||(v.nameOrVendor?.toLowerCase()||"").includes(search.toLowerCase()));
@@ -2070,7 +2103,7 @@ function Vouchers({materialEntries, labourEntries}){
             <Bdg s={v.type}/>,
             <div style={{display:"flex", flexDirection:"column"}}>
               <span style={{fontSize:12,color:C.g400}}>{v.date ? new Date(v.date).toLocaleDateString("en-IN") : "N/A"}</span>
-              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(v.createdAt?.toDate ? v.createdAt.toDate() : v.id)}</span>
+              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(v.createdAt) || v.id)}</span>
             </div>,
             <span style={{fontSize:12,color:C.g500}}>{v.siteName || "N/A"}</span>,
             <span style={{fontWeight:600}}>{v.nameOrVendor || "N/A"}</span>,
@@ -2238,7 +2271,7 @@ function Reports({sites, materialEntries, labourEntries}){
     
     // Compute expenses from real entries for this specific site
     const matExp = (materialEntries || []).filter(m => m.siteId?.toString() === s.id?.toString()).reduce((a,m) => a + ((Number(m.rate||0)*Number(m.quantity||m.qty||0)) || Number(m.total||0)), 0);
-    const labExp = (labourEntries || []).filter(l => l.siteId?.toString() === s.id?.toString()).reduce((a,l) => a + Number(l.amount || l.total || 0), 0);
+    const labExp = (labourEntries || []).filter(l => (l.siteId || "").toString() === s.id?.toString()).reduce((a,l) => a + Number(l.amount || l.total || 0), 0);
     const billExp = (s.expenses?.bills || []).reduce((a,b) => a + Number(b.total || b.amount || 0), 0);
     const expenses = matExp + labExp + billExp;
     
@@ -3486,13 +3519,13 @@ export default function App(){
     const unsubMaterial = onSnapshot(collection(db, "material_entries"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setMaterialEntries(list.sort((a,b) => new Date(b.createdAt?.toDate() || 0) - new Date(a.createdAt?.toDate() || 0)));
+      setMaterialEntries(list.sort((a,b) => new Date(getDt(b.createdAt) || 0) - new Date(getDt(a.createdAt) || 0)));
     }, (err) => { console.error(err); setFirebaseError("Material: " + err.message); });
 
     const unsubLabour = onSnapshot(collection(db, "labour_entries"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setLabourEntries(list.sort((a,b) => new Date(b.createdAt?.toDate() || 0) - new Date(a.createdAt?.toDate() || 0)));
+      setLabourEntries(list.sort((a,b) => new Date(getDt(b.createdAt) || 0) - new Date(getDt(a.createdAt) || 0)));
     }, (err) => { console.error(err); setFirebaseError("Labour: " + err.message); });
 
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -3908,7 +3941,7 @@ export default function App(){
           {nav==="reviews"&&user.role==="Admin"&&<ReviewsAdmin/>}
           {nav==="consultations"&&user.role==="Admin"&&<ConsultationsAdmin/>}
           {nav==="sites"&&<Sites user={user} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
-          {nav==="transactions"&&<Transactions user={user} sites={sites} labourEntries={labourEntries}/>}
+          {nav==="transactions"&&<ErrorBoundary><Transactions user={user} sites={sites} labourEntries={labourEntries}/></ErrorBoundary>}
           {nav==="vouchers"&&<Vouchers materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="clients"&&<Clients user={user} clients={clients} sites={sites}/>}
           {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
