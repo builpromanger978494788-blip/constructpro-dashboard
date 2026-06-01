@@ -34,7 +34,7 @@ const C = {
 };
 
 const getDt = v => v && typeof v.toDate === 'function' ? v.toDate() : v;
-const fmt = n => n>=10000000?`₹${(n/10000000).toFixed(2)}Cr`:n>=100000?`₹${(n/100000).toFixed(1)}L`:`₹${Number(n).toLocaleString("en-IN")}`;
+const fmt = n => `₹${(Number(n) || 0).toLocaleString("en-IN")}`;
 const fmtDate = (ts) => {
   if (!ts) return "N/A";
   let d;
@@ -43,6 +43,29 @@ const fmtDate = (ts) => {
   else d = new Date(ts);
   if (isNaN(d.getTime())) return "N/A";
   return d.toLocaleString("en-IN", { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const numToIndianShortWords = (num) => {
+  if (isNaN(num) || num === 0) return "";
+  if (num < 100) return num.toString();
+  if (num < 1000) {
+     const h = Math.floor(num / 100);
+     const rem = num % 100;
+     return h + " Hundred" + (rem > 0 ? " " + rem : "");
+  }
+  if (num < 100000) {
+     const th = Math.floor(num / 1000);
+     const rem = num % 1000;
+     return th + " Thousand" + (rem > 0 ? " " + numToIndianShortWords(rem) : "");
+  }
+  if (num < 10000000) {
+     const lk = Math.floor(num / 100000);
+     const rem = num % 100000;
+     return lk + " Lakh" + (rem > 0 ? " " + numToIndianShortWords(rem) : "");
+  }
+  const cr = Math.floor(num / 10000000);
+  const rem = num % 10000000;
+  return cr + " Crore" + (rem > 0 ? " " + numToIndianShortWords(rem) : "");
 };
 
 const INIT_SITES = {
@@ -202,21 +225,25 @@ function computeRealPieData(sites, materialEntries, labourEntries) {
 
 
 function Bdg({s}){
-  const m={Paid:[C.green,"#e8f5e9"],Partial:[C.gold,"#fff8e1"],Unpaid:[C.red,"#fdecea"],Completed:[C.green,"#e8f5e9"],"Under Process":[C.blueDeep,"#e3f2fd"],Admin:[C.sageDark,C.pistaPale],Staff:[C.blueDeep,C.bluePale],Cash:[C.sage,C.pistaPale],Cheque:[C.blueDeep,C.bluePale],"Bank Transfer":[C.gold,C.orangePale],NEFT:[C.blueDeep,C.bluePale],UPI:[C.coral,C.coralPale],Material:[C.pista,C.pistaPale],Labour:[C.blueDeep,C.bluePale]};
+  const m={Paid:[C.green,"#e8f5e9"],Full:[C.green,"#e8f5e9"],Partial:[C.gold,"#fff8e1"],Advance:[C.blueDeep,"#e3f2fd"],Unpaid:[C.red,"#fdecea"],Completed:[C.green,"#e8f5e9"],"Under Process":[C.blueDeep,"#e3f2fd"],Admin:[C.sageDark,C.pistaPale],Staff:[C.blueDeep,C.bluePale],Cash:[C.sage,C.pistaPale],Cheque:[C.blueDeep,C.bluePale],"Bank Transfer":[C.gold,C.orangePale],NEFT:[C.blueDeep,C.bluePale],UPI:[C.coral,C.coralPale],Material:[C.pista,C.pistaPale],Labour:[C.blueDeep,C.bluePale]};
   const[c,bg]=m[s]||[C.g500,C.g100];
   return<span style={{padding:"3px 11px",borderRadius:20,background:bg,color:c,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{s}</span>;
 }
 
 // Global Helper to move deleted items to Trash
 async function moveToTrash(type, data, extra = {}) {
-  const trashId = Date.now().toString();
-  await setDoc(doc(db, "trash", trashId), {
-    id: trashId,
-    deletedAt: Date.now(),
-    type,
-    data,
-    ...extra
-  });
+  try {
+    const trashId = Date.now().toString();
+    await setDoc(doc(db, "trash", trashId), {
+      id: trashId,
+      deletedAt: Date.now(),
+      type,
+      data,
+      ...extra
+    });
+  } catch (err) {
+    console.warn("Could not save to trash", err);
+  }
 }
 
 function Card({children,style={}}){return<div style={{background:C.cardBg,borderRadius:16,boxShadow:C.sh,...style}}>{children}</div>;}
@@ -249,12 +276,44 @@ function Modal({title,children,onClose,w=520}){
 }
 function Fld({label,value,onChange,type="text",placeholder,as="input",options,disabled}){
   const base={width:"100%",border:`1.5px solid ${C.g200}`,borderRadius:10,padding:"10px 14px",fontSize:14,outline:"none",fontFamily:"inherit",background:disabled?"#f9f9f9":C.offWhite,boxSizing:"border-box",color:C.dark,opacity:disabled?0.7:1};
+  
+  const isAmount = label && (label.toUpperCase().includes("AMOUNT") || label.toUpperCase().includes("RATE") || label.toUpperCase().includes("ADVANCE") || label.toUpperCase().includes("TOTAL DEAL") || label.toUpperCase().includes("TOTAL VALUE") || label.includes("₹"));
+
+  const handleChange = (e) => {
+    if (isAmount && as === "input") {
+      let raw = e.target.value.replace(/[^0-9.]/g, '');
+      const parts = raw.split('.');
+      if (parts.length > 2) raw = parts[0] + '.' + parts.slice(1).join('');
+      e.target.value = raw;
+    }
+    if (onChange) onChange(e);
+  };
+
+  let displayValue = value;
+  let words = "";
+  if (isAmount && as === "input") {
+     const numStr = (value || "").toString().replace(/[^0-9.]/g, '');
+     if (numStr) {
+       const parts = numStr.split('.');
+       const intPart = parts[0] ? Number(parts[0]).toLocaleString('en-IN') : "";
+       displayValue = parts.length > 1 ? intPart + '.' + parts[1] : intPart;
+       if (!isNaN(Number(numStr)) && Number(numStr) > 0) {
+          words = numToIndianShortWords(Math.floor(Number(numStr)));
+       }
+     }
+  }
+
+  const inputType = (isAmount && as === "input") ? "text" : type;
+
   return(
     <div style={{marginBottom:14}}>
-      {label&&<div style={{fontSize:12,color:C.g500,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>}
+      {label&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:5}}>
+         <div style={{fontSize:12,color:C.g500,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>
+         {words && <div style={{fontSize:11,color:C.sageDark,fontWeight:700,fontStyle:"italic"}}>{words}</div>}
+      </div>}
       {as==="select"?<select value={value} onChange={onChange} style={base} disabled={disabled}>{options?.map(o=><option key={o}>{o}</option>)}</select>
       :as==="textarea"?<textarea value={value} onChange={onChange} placeholder={placeholder} style={{...base, minHeight:100, resize:"vertical"}} disabled={disabled} />
-      :<input type={type} value={value} onChange={onChange} placeholder={placeholder} style={base} disabled={disabled}/>}
+      :<input type={inputType} value={displayValue} onChange={handleChange} placeholder={placeholder} style={base} disabled={disabled}/>}
     </div>
   );
 }
@@ -589,17 +648,17 @@ function Home({sites, user, setNav, onImportDemo, clients, materialEntries, labo
 
   // ── Revenue: ongoing payment collected + completed total cost
   const rev = [
-    ...sites.ongoing.map(s => s.payment?.paid || 0),
+    ...sites.ongoing.map(s => s.payment?.paid || s["payment.paid"] || 0),
     ...sites.completed.map(s => {
-      const paid = s.payment?.paid;
-      return typeof paid === 'number' ? paid : (s.totalCost || 0);
+      const paid = s.payment?.paid || s["payment.paid"];
+      return typeof paid === 'number' ? paid : (s.totalCost || s.totalDeal || s.payment?.totalDeal || s["payment.totalDeal"] || 0);
     })
   ].reduce((a, v) => a + Number(v || 0), 0);
 
   // ── Expense: FROM REAL materialEntries + labourEntries (Firebase collections)
   // These are the actual entries saved via AddEntry / Site Material/Labour tabs
   const matExp = (materialEntries || []).reduce((a, m) => {
-    const total = (Number(m.rate || 0) * Number(m.quantity || m.qty || 0)) || Number(m.total || 0);
+    const total = Number(m.rate || 0) || Number(m.total || 0);
     return a + total;
   }, 0);
   const labExp = (labourEntries || []).reduce((a, l) => a + Number(l.amount || l.total || 0), 0);
@@ -609,7 +668,11 @@ function Home({sites, user, setNav, onImportDemo, clients, materialEntries, labo
   const exp = matExp + labExp + billExp;
 
   // ── Pending: amount yet to be collected from ongoing sites
-  const pending = sites.ongoing.reduce((a, s) => a + Math.max(0, (s.payment?.totalDeal || 0) - (s.payment?.paid || 0)), 0);
+  const pending = sites.ongoing.reduce((a, s) => {
+    const deal = s.payment?.totalDeal ?? s.totalDeal ?? s["payment.totalDeal"] ?? 0;
+    const paid = s.payment?.paid ?? s["payment.paid"] ?? 0;
+    return a + Math.max(0, Number(deal) - Number(paid));
+  }, 0);
 
   // ── Vouchers: REAL count from materialEntries + labourEntries Firebase collections
   const voucherCount = (materialEntries?.length || 0) + (labourEntries?.length || 0);
@@ -767,17 +830,28 @@ function PayTab({site}){
   const[showAdd,setShowAdd]=useState(false);
   const[editId,setEditId]=useState(null);
   const[form,setForm]=useState({amount:"",type:"Cash",date:""});
-  const p=site.payment||{totalDeal:0,paid:0,methods:[]},rem=p.totalDeal-p.paid,extra=rem<0?Math.abs(rem):0;
+  
+  const pRaw = site.payment && typeof site.payment === 'object' ? site.payment : {};
+  const p = {
+    totalDeal: pRaw.totalDeal ?? site.totalDeal ?? site["payment.totalDeal"] ?? 0,
+    paid: pRaw.paid ?? site["payment.paid"] ?? 0,
+    methods: pRaw.methods || []
+  };
+  const rem = p.totalDeal - p.paid;
+  const extra = rem < 0 ? Math.abs(rem) : 0;
 
   function openEdit(m){setEditId(m.id);setForm({amount:m.amount,type:m.type,date:m.date});}
   async function saveEdit(){
     const newMethods=p.methods.map(m=>m.id===editId?{...m,amount:Number(form.amount),type:form.type,date:form.date}:m);
     const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
     const siteRef = doc(db, "sites", site.id.toString());
-    await updateDoc(siteRef, {
-      "payment.methods": newMethods,
-      "payment.paid": newPaid
-    });
+    await setDoc(siteRef, {
+      payment: {
+        ...p,
+        methods: newMethods,
+        paid: newPaid
+      }
+    }, { merge: true });
     setEditId(null);
   }
   async function addPayment(){
@@ -785,10 +859,13 @@ function PayTab({site}){
     const amt=Number(form.amount);
     const newMethods=[...p.methods,{id:Date.now(),type:form.type,amount:amt,date:form.date||new Date().toLocaleDateString("en-IN")}];
     const siteRef = doc(db, "sites", site.id.toString());
-    await updateDoc(siteRef, {
-      "payment.methods": newMethods,
-      "payment.paid": p.paid+amt
-    });
+    await setDoc(siteRef, {
+      payment: {
+        ...p,
+        methods: newMethods,
+        paid: p.paid + amt
+      }
+    }, { merge: true });
     setForm({amount:"",type:"Cash",date:""});setShowAdd(false);
   }
   async function delPayment(id){
@@ -807,10 +884,13 @@ function PayTab({site}){
     const newMethods=p.methods.filter(m=>m.id!==id);
     const newPaid=newMethods.reduce((a,m)=>a+m.amount,0);
     const siteRef = doc(db, "sites", site.id.toString());
-    await updateDoc(siteRef, {
-      "payment.methods": newMethods,
-      "payment.paid": newPaid
-    });
+    await setDoc(siteRef, {
+      payment: {
+        ...p,
+        methods: newMethods,
+        paid: newPaid
+      }
+    }, { merge: true });
   }
 
   return(
@@ -864,14 +944,14 @@ function MatTab({site, sites, materialEntries}){
     <div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn onClick={()=>{setShowAdd(true);}}>➕ Add Material</Btn></div>
       <Card>
-        <Tbl cols={["Date","Material","Vendor","Unit","Qty","Rate","Total","Paid","Due","Status"]}
+        <Tbl cols={["Date","Material","Vendor","Qty","Unit","Total Amount","Paid","Due","Status"]}
           rows={siteMaterials.map(m=>[
-            <span style={{fontSize:12,color:C.g400}}>{m.date || new Date(getDt(m.createdAt)||m.id||0).toLocaleDateString("en-IN")}</span>,
+            <span style={{fontSize:12,color:C.g400}}>{new Date(m.date || getDt(m.createdAt) || m.id || 0).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</span>,
             <span style={{fontWeight:600,color:C.dark}}>{m.material}</span>,m.vendor,
-            m.unit || 'COUNT', m.quantity || m.qty, fmt(m.rate),
-            <span style={{fontWeight:700}}>{fmt((m.rate * (m.quantity || m.qty)) || m.total)}</span>,
+            m.quantity || m.qty, m.unit || 'COUNT',
+            <span style={{fontWeight:700}}>{fmt(m.rate || m.total || 0)}</span>,
             <span style={{color:C.green,fontWeight:600}}>{fmt(m.paid ?? m.advance ?? 0)}</span>,
-            <span style={{color:C.red,fontWeight:600}}>{fmt(m.due ?? m.remaining ?? 0)}</span>,
+            <span style={{color:C.red,fontWeight:600}}>{fmt(Math.max(0, Number(m.rate || m.total || 0) - Number(m.paid ?? m.advance ?? 0)))}</span>,
             <Bdg s={m.status}/>
           ])}/>
       </Card>
@@ -915,11 +995,11 @@ function LabTab({site, sites, labourEntries}){
         <Card>
           <Tbl cols={["Date","Work Type","Rate (₹)","Paid (₹)","Due (₹)","Status"]}
             rows={detailView.entries.map(l => [
-              <span style={{fontSize:12,color:C.g400}}>{l.date || new Date(getDt(l.createdAt)||l.id||0).toLocaleDateString("en-IN")}</span>,
+              <span style={{fontSize:12,color:C.g400}}>{new Date(l.date || getDt(l.createdAt) || l.id || 0).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</span>,
               <span style={{fontWeight:600,color:C.dark}}>{l.workType || l.work}</span>,
               <span style={{fontWeight:700}}>{fmt(l.amount || l.total)}</span>,
               <span style={{color:C.green,fontWeight:600}}>{fmt(l.paid || l.advance || 0)}</span>,
-              <span style={{color:C.red,fontWeight:600}}>{fmt(l.due || l.remaining || 0)}</span>,
+              <span style={{color:C.red,fontWeight:600}}>{fmt(Math.max(0, Number(l.amount || l.total || 0) - Number(l.paid || l.advance || 0)))}</span>,
               <Bdg s={l.status}/>
             ])}
           />
@@ -960,48 +1040,63 @@ function LabTab({site, sites, labourEntries}){
 // ─── BILLS TAB ────────────────────────────────────────────────
 function BillsTab({site, materialEntries, labourEntries}){
   // Auto-generate bills from materialEntries and labourEntries for this site
-  const matBills = (materialEntries || []).filter(m => m.siteId?.toString() === site.id?.toString()).map(m => ({
-    id: m.id,
-    billNo: `M-${m.id?.toString().slice(-4)}`,
-    type: "Material",
-    date: m.date || new Date(getDt(m.createdAt)||Date.now()).toLocaleDateString("en-IN"),
-    contractor: m.vendor || "N/A",
-    material: m.material || "N/A",
-    qty: m.quantity || "-",
-    rate: m.rate || 0,
-    total: (Number(m.rate || 0) * Number(m.quantity || 0)) || Number(m.total || 0)
-  }));
+  const matBills = (materialEntries || []).filter(m => m.siteId?.toString() === site.id?.toString()).map(m => {
+    const rawDt = m.date || getDt(m.createdAt) || Date.now();
+    return {
+      id: m.id,
+      billNo: `M-${m.id?.toString().slice(-4)}`,
+      type: "Material",
+      dateStr: new Date(rawDt).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' }),
+      timestamp: new Date(rawDt).getTime(),
+      createdAtTime: getDt(m.createdAt) ? new Date(getDt(m.createdAt)).getTime() : Number(m.id || 0),
+      contractor: m.vendor || "N/A",
+      material: m.material || "N/A",
+      qty: m.quantity || m.qty || "-",
+      rate: "-",
+      total: Number(m.rate || 0) || Number(m.total || 0),
+      paid: Number(m.paid || m.advance || 0)
+    };
+  });
   
-  const labBills = (labourEntries || []).filter(l => (l.siteId || "").toString() === site.id?.toString()).map(l => ({
-    id: l.id,
-    billNo: `L-${l.id?.toString().slice(-4)}`,
-    type: "Labour",
-    date: l.date || new Date(getDt(l.createdAt)||Date.now()).toLocaleDateString("en-IN"),
-    contractor: l.contractor || "N/A",
-    material: l.workType || "N/A",
-    qty: "-",
-    rate: "-",
-    total: Number(l.amount || l.total || 0)
-  }));
+  const labBills = (labourEntries || []).filter(l => (l.siteId || "").toString() === site.id?.toString()).map(l => {
+    const rawDt = l.date || getDt(l.createdAt) || Date.now();
+    return {
+      id: l.id,
+      billNo: `L-${l.id?.toString().slice(-4)}`,
+      type: "Labour",
+      dateStr: new Date(rawDt).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' }),
+      timestamp: new Date(rawDt).getTime(),
+      createdAtTime: getDt(l.createdAt) ? new Date(getDt(l.createdAt)).getTime() : Number(l.id || 0),
+      contractor: l.contractor || "N/A",
+      material: l.workType || l.work || "N/A",
+      qty: "-",
+      rate: "-",
+      total: Number(l.amount || l.total || 0),
+      paid: Number(l.paid || l.advance || 0)
+    };
+  });
 
-  const bills = [...matBills, ...labBills].sort((a,b) => b.id - a.id);
-  const total = bills.reduce((a,b) => a + (b.total || 0), 0);
+  const bills = [...matBills, ...labBills].sort((a,b) => {
+    if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
+    return b.createdAtTime - a.createdAtTime;
+  });
+  const totalPaid = bills.reduce((a,b) => a + (b.paid || 0), 0);
 
   return(
     <div>
       <div style={{fontSize:13,color:C.g500,marginBottom:12}}>💡 This is an auto-generated consolidated list of all Material and Labour entries for this site.</div>
       <Card style={{marginBottom:14}}>
-        <Tbl cols={["Bill No.","Type","Date","Vendor/Contractor","Item/Work","Qty","Rate","Total"]}
+        <Tbl cols={["Bill No.","Type","Date","Vendor/Contractor","Item/Work","Qty","Rate","Bill Total"]}
           rows={bills.map(b=>[
             <span style={{color:C.blueDeep,fontWeight:700}}>{b.billNo}</span>,<Bdg s={b.type}/>,
-            <span style={{fontSize:12,color:C.g400}}>{b.date}</span>,b.contractor,b.material,b.qty,
-            b.rate === "-" ? "-" : fmt(b.rate),
-            <span style={{fontWeight:700,color:C.green}}>{fmt(b.total)}</span>
+            <span style={{fontSize:12,color:C.g400}}>{b.dateStr}</span>,b.contractor,b.material,b.qty,
+            <span style={{fontWeight:700,color:C.dark}}>{fmt(b.total)}</span>,
+            <span style={{fontWeight:700,color:C.green}}>{fmt(b.paid)}</span>
           ])}/>
       </Card>
       <div style={{background:C.pistaPale,borderRadius:12,padding:"12px 18px",display:"flex",justifyContent:"space-between"}}>
-        <span style={{fontWeight:700,color:C.dark}}>Total Expenses</span>
-        <span style={{fontWeight:800,fontSize:17,color:C.sageDark}}>{fmt(total)}</span>
+        <span style={{fontWeight:700,color:C.dark}}>Total Paid (Actual Expense)</span>
+        <span style={{fontWeight:800,fontSize:17,color:C.sageDark}}>{fmt(totalPaid)}</span>
       </div>
     </div>
   );
@@ -1047,18 +1142,30 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
   async function saveSiteEdit(){
     const siteRef = doc(db, "sites", site.id.toString());
     const updateData = {
-      name: siteForm.name,
-      client: siteForm.client,
-      contact: siteForm.contact,
-      address: siteForm.address,
-      startDate: siteForm.startDate,
-      estCompletion: siteForm.estCompletion,
-      progress: Number(siteForm.progress)
+      name: siteForm.name || "",
+      client: siteForm.client || "",
+      contact: siteForm.contact || "",
+      address: siteForm.address || "",
+      startDate: siteForm.startDate || "",
+      estCompletion: siteForm.estCompletion || "",
+      progress: Number(siteForm.progress) || 0,
+      status: "ongoing"
     };
     if (user?.role === "Admin") {
-      updateData["payment.totalDeal"] = Number(siteForm.totalDeal);
+      const dealAmt = Number(siteForm.totalDeal) || 0;
+      updateData.payment = {
+        ...(site.payment || {}),
+        totalDeal: dealAmt
+      };
+      updateData.totalDeal = dealAmt;
+      updateData.totalCost = dealAmt;
     }
-    await updateDoc(siteRef, updateData);
+    try {
+      await setDoc(siteRef, updateData, { merge: true });
+      alert("Site updated successfully!");
+    } catch(err) {
+      alert("Error updating site: " + err.message);
+    }
     setEditSite(false);
   }
 
@@ -1074,7 +1181,15 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
           <Bdg s="Under Process"/>
           <Btn v="secondary" small onClick={()=>setEditSite(true)}>✏️ Edit Site</Btn>
           <label style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",background:C.pistaPale,borderRadius:10,cursor:"pointer",border:`1.5px solid ${C.pistaLight}`,fontSize:13,fontWeight:600,color:C.sageDark}}>
-            <input type="checkbox" onChange={e=>{if(e.target.checked)onComplete(site.id);}} style={{width:16,height:16,accentColor:C.sageDark}}/>
+            <input type="checkbox" onChange={e=>{
+              if(e.target.checked){
+                if(confirm(`Are you sure you want to mark "${site.name}" as Completed? This will move it to the Completed section.`)){
+                  onComplete(site.id);
+                } else {
+                  e.target.checked = false;
+                }
+              }
+            }} style={{width:16,height:16,accentColor:C.sageDark}}/>
             Mark Completed
           </label>
         </div>
@@ -1132,10 +1247,10 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
                 ["Revenue Collected to Date", fmt(site.payment?.paid||0), C.green],
                 ["Outstanding Balance", fmt(Math.max(0, (site.payment?.totalDeal||0) - (site.payment?.paid||0))), C.red],
               ] : []),
-              ["Materials Expense Spent", fmt((materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+((Number(m.rate||0)*Number(m.quantity||0))||Number(m.total||0)),0)), C.orange],
+              ["Materials Expense Spent", fmt((materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+(Number(m.rate||0)||Number(m.total||0)),0)), C.orange],
               ["Labour Expense Spent", fmt((labourEntries||[]).filter(l=>(l.siteId || "").toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)), C.blueDeep],
               ["Total Site Expenditure", fmt(
-                (materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+((Number(m.rate||0)*Number(m.quantity||0))||Number(m.total||0)),0) + 
+                (materialEntries||[]).filter(m=>m.siteId?.toString()===site.id?.toString()).reduce((a,m)=>a+(Number(m.rate||0)||Number(m.total||0)),0) + 
                 (labourEntries||[]).filter(l=>(l.siteId || "").toString()===site.id?.toString()).reduce((a,l)=>a+Number(l.amount||l.total||0),0)
               ), C.red],
             ].map(([k,v,c])=>(
@@ -1162,18 +1277,23 @@ function SiteDetail({user, site,onBack,onComplete, sites, materialEntries, labou
               {(site.documents || []).length === 0 ? (
                 <div style={{color:C.g400,fontSize:13,gridColumn:"1/-1"}}>No documents uploaded yet.</div>
               ) : (site.documents || []).map(d => (
-                <div key={d.id} style={{background:C.offWhite,border:`1.5px solid ${C.g100}`,borderRadius:12,padding:16,display:"flex",flexDirection:"column",justifyContent:"space-between",height:120}}>
+                <div key={d.id} style={{background:C.offWhite,border:`1.5px solid ${C.g100}`,borderRadius:12,padding:16,display:"flex",flexDirection:"column",gap:8}}>
                   <div style={{fontSize:24}}>📄</div>
                   <div>
                     <div style={{fontWeight:700,fontSize:13,color:C.dark,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.name}>{d.name}</div>
                     <div style={{fontSize:11,color:C.g400,marginTop:2}}>{d.size} · {d.date}</div>
                   </div>
-                  <div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
                     {d.url ? (
-                      <a href={d.url} target="_blank" rel="noreferrer" style={{color:C.blueDeep,fontWeight:700,fontSize:12,textDecoration:"none"}}>Download ⬇️</a>
+                      <a href={d.url} target="_blank" rel="noreferrer" style={{flex:1,background:C.pistaPale,color:C.sageDark,fontWeight:700,fontSize:12,textDecoration:"none",padding:"6px 10px",borderRadius:8,textAlign:"center",border:`1px solid ${C.pistaLight}`}}>⬇️ Download</a>
                     ) : (
-                      <span style={{color:C.g400,fontSize:12}}>Processing...</span>
+                      <span style={{color:C.g400,fontSize:12,flex:1}}>Processing...</span>
                     )}
+                    <button onClick={async ()=>{
+                      if(!confirm(`Delete "${d.name}"?`)) return;
+                      const siteRef = doc(db, "sites", site.id.toString());
+                      await updateDoc(siteRef, { documents: (site.documents||[]).filter(x=>x.id!==d.id) });
+                    }} style={{background:"#fdecea",color:C.red,border:"none",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:13,fontWeight:700}}>🗑️</button>
                   </div>
                 </div>
               ))}
@@ -1342,7 +1462,9 @@ function Sites({user, sites, materialEntries, labourEntries}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:18}}>
           {sites.ongoing.length===0&&<div style={{padding:40,color:C.g400,fontSize:14,gridColumn:"1/-1",textAlign:"center"}}>No ongoing sites. Click "Add New Site" to start.</div>}
           {[...sites.ongoing].sort((a,b)=>b.id-a.id).map(s=>{
-            const rem=(s.payment?.totalDeal||0)-(s.payment?.paid||0);
+            const dealVal = s.payment?.totalDeal ?? s.totalDeal ?? s["payment.totalDeal"] ?? 0;
+            const paidVal = s.payment?.paid ?? s["payment.paid"] ?? 0;
+            const rem = Number(dealVal) - Number(paidVal);
             return(
               <Card key={s.id} style={{padding:20,borderTop:`4px solid ${C.pista}`,position:"relative"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
@@ -1353,32 +1475,42 @@ function Sites({user, sites, materialEntries, labourEntries}){
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>👤 {s.client} · 📞 {s.contact}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:2}}>📍 {s.address}</div>
                 <div style={{fontSize:13,color:C.g400,marginBottom:12}}>📅 {s.startDate} → {s.estCompletion}</div>
-                {user?.role === "Admin" && [["Total Deal",fmt(s.payment?.totalDeal||0)],["Paid",fmt(s.payment?.paid||0)],["Pending",fmt(Math.max(0,rem))]].map(([k,v])=>(
-                  <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.g100}`}}>
-                    <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:700,color:C.dark}}>{v}</span>
-                  </div>
-                ))}
+                {user?.role === "Admin" && (() => {
+                  const matPaid = (materialEntries||[]).filter(m=>m.siteId?.toString()===s.id?.toString()).reduce((a,m)=>a+Number(m.paid||m.advance||0),0);
+                  const labPaid = (labourEntries||[]).filter(l=>(l.siteId||"").toString()===s.id?.toString()).reduce((a,l)=>a+Number(l.paid||l.advance||0),0);
+                  const expense = matPaid + labPaid;
+                  return [["Total Deal",fmt(dealVal)],["Paid",fmt(paidVal)],["Pending",fmt(Math.max(0,rem))],["Expense (Paid)",fmt(expense)]].map(([k,v])=>(
+                    <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.g100}`}}>
+                      <span style={{fontSize:13,color:C.g400}}>{k}</span><span style={{fontSize:13,fontWeight:700,color:k==="Expense (Paid)"?C.red:C.dark}}>{v}</span>
+                    </div>
+                  ));
+                })()}
                 <div style={{marginTop:12}}><ProgBar pct={s.progress} h={8}/>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.g400,marginTop:4}}>
-                    <span>👷 {s.contractorCount} contractors</span><span>{s.progress}% done</span>
+                    <span>👷 {(labourEntries||[]).filter(l=>(l.siteId||"").toString()===s.id?.toString()).map(l=>l.contractor).filter((v,i,a)=>v&&a.indexOf(v)===i).length} contractors</span><span>{s.progress}% done</span>
                   </div>
                 </div>
                 <div style={{marginTop:14,display:"flex",gap:8,flexWrap:"wrap"}}>
                   <Btn small onClick={()=>setSel(s)}>📂 Open</Btn>
                   <label style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:C.pistaPale,borderRadius:8,cursor:"pointer",border:`1.5px solid ${C.pistaLight}`,fontSize:12,fontWeight:600,color:C.sageDark}}>
-                    <input type="checkbox" onChange={e=>{if(e.target.checked)completeSite(s.id);}} style={{accentColor:C.sageDark}}/> Complete
+                    <input type="checkbox" onChange={e=>{
+                      if(e.target.checked){
+                        if(confirm(`Are you sure you want to mark "${s.name}" as Completed?`)){
+                          completeSite(s.id);
+                        } else {
+                          e.target.checked = false;
+                        }
+                      }
+                    }} style={{accentColor:C.sageDark}}/> Complete
                   </label>
                   <Btn small v="danger" onClick={async ()=>{
                     if(confirm(`Are you sure you want to delete ongoing site "${s.name}"? It will be moved to the Trash Bin.`)){
-                      const trashId = Date.now().toString();
-                      await setDoc(doc(db, "trash", trashId), {
-                        id: trashId,
-                        deletedAt: Date.now(),
-                        type: "Site",
-                        originalCollection: "sites",
-                        data: s
-                      });
-                      await deleteDoc(doc(db, "sites", s.id.toString()));
+                      await moveToTrash("Site", s, { originalCollection: "sites" });
+                      try {
+                        await deleteDoc(doc(db, "sites", s.id.toString()));
+                      } catch (err) {
+                        alert("Error deleting site: " + err.message);
+                      }
                     }
                   }}>🗑️</Btn>
                 </div>
@@ -1505,19 +1637,19 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
     
     let paid = 0;
     let due = 0;
-    const rate = Number(form.rate);
+    const amount = Number(form.rate);
     const quantity = Number(form.quantity);
     const advance = Number(form.advance) || 0;
     
-    if (form.status === 'Paid') {
-      paid = rate * quantity;
+    if (form.status === 'Full' || form.status === 'Paid') {
+      paid = amount;
       due = 0;
     } else if (form.status === 'Unpaid') {
       paid = 0;
-      due = rate * quantity;
-    } else if (form.status === 'Partial') {
+      due = amount;
+    } else if (form.status === 'Partial' || form.status === 'Advance') {
       paid = advance;
-      due = (rate * quantity) - advance;
+      due = amount - advance;
     }
 
     try {
@@ -1580,12 +1712,12 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
             </select>
           </div>
         </div>
-        <Fld label="RATE (₹)" type="number" value={form.rate} onChange={e=>setForm({...form,rate:e.target.value})}/>
+        <Fld label="TOTAL AMOUNT (₹)" type="number" value={form.rate} onChange={e=>setForm({...form,rate:e.target.value})}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
         <Fld label="ADVANCE (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
         <Fld label="DATE" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Paid", "Unpaid"]}/>
+        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Advance", "Full"]}/>
       </div>
       {err && <div style={{color: C.red, fontSize: 13, marginTop: -4, marginBottom: 10}}>{err}</div>}
       <div style={{display:"flex",gap:10,marginTop:10}}>
@@ -1635,13 +1767,13 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
     const amount = Number(form.amount);
     const advance = Number(form.advance) || 0;
     
-    if (form.status === 'Paid') {
+    if (form.status === 'Full' || form.status === 'Paid') {
       paid = amount;
       due = 0;
     } else if (form.status === 'Unpaid') {
       paid = 0;
       due = amount;
-    } else if (form.status === 'Partial') {
+    } else if (form.status === 'Partial' || form.status === 'Advance') {
       paid = advance;
       due = amount - advance;
     }
@@ -1697,7 +1829,7 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
         <Fld label="ADVANCE (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
         <Fld label="DATE" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Paid", "Unpaid"]}/>
+        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Advance", "Full"]}/>
       </div>
       {err && <div style={{color: C.red, fontSize: 13, marginTop: -4, marginBottom: 10}}>{err}</div>}
       <div style={{display:"flex",gap:10,marginTop:10}}>
@@ -1738,9 +1870,9 @@ function LedgerDetailTable({ type, name, entries }) {
     }
   }).sort((a,b) => new Date(getDt(b.createdAt) || b.id || 0) - new Date(getDt(a.createdAt) || a.id || 0));
 
-  const totalBill = filtered.reduce((a, b) => a + ((type === "Material" ? (b.rate * b.quantity) : b.amount) || 0), 0);
+  const totalBill = filtered.reduce((a, b) => a + ((type === "Material" ? (Number(b.rate) || Number(b.total)) : b.amount) || 0), 0);
   const totalPaid = filtered.reduce((a, b) => a + (b.paid || 0), 0);
-  const totalDue = filtered.reduce((a, b) => a + (b.due || 0), 0);
+  const totalDue = Math.max(0, totalBill - totalPaid);
 
   function handlePrint() {
     window.print();
@@ -1757,9 +1889,11 @@ function LedgerDetailTable({ type, name, entries }) {
 
     const body = filtered.map((e, i) => {
       if (type === "Material") {
-        return [i+1, e.siteName || "N/A", e.material || "N/A", pdfFmt(e.rate * e.quantity), pdfFmt(e.paid || 0), pdfFmt(e.due || 0)];
+        const t = Number(e.rate) || Number(e.total) || 0;
+        return [i+1, e.siteName || "N/A", e.material || "N/A", pdfFmt(t), pdfFmt(e.paid || 0), pdfFmt(Math.max(0, t - (e.paid || 0)))];
       } else {
-        return [i+1, e.siteName || "N/A", e.workType || "N/A", pdfFmt(e.amount || 0), pdfFmt(e.paid || 0), pdfFmt(e.due || 0)];
+        const t = Number(e.amount) || Number(e.total) || 0;
+        return [i+1, e.siteName || "N/A", e.workType || "N/A", pdfFmt(t), pdfFmt(e.paid || 0), pdfFmt(Math.max(0, t - (e.paid || 0)))];
       }
     });
 
@@ -1809,9 +1943,9 @@ function LedgerDetailTable({ type, name, entries }) {
               <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(e.createdAt) || e.id)}</span>
             </div>, 
             type === "Material" ? (e.material || "N/A") : (e.workType || "N/A"),
-            <span style={{fontWeight:700}}>{fmt(type === "Material" ? (e.rate * e.quantity) : e.amount)}</span>,
+            <span style={{fontWeight:700}}>{fmt(type === "Material" ? (Number(e.rate) || Number(e.total) || 0) : e.amount)}</span>,
             <span style={{fontWeight:700,color:C.green}}>{fmt(e.paid || 0)}</span>,
-            <span style={{fontWeight:700,color:C.red}}>{fmt(e.due || 0)}</span>
+            <span style={{fontWeight:700,color:C.red}}>{fmt(Math.max(0, (type === "Material" ? (Number(e.rate) || Number(e.total) || 0) : Number(e.amount || 0)) - (e.paid || 0)))}</span>
           ])}
         />
         <div style={{padding:"12px 14px",background:C.pistaPale,display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:14}}>
@@ -1851,7 +1985,7 @@ function Ledger({ materialEntries, labourEntries }) {
     const v = m.vendor || "Unknown Vendor";
     if (!matGroups[v]) matGroups[v] = { count: 0, total: 0, latestAt: 0 };
     matGroups[v].count++;
-    matGroups[v].total += ((m.rate * m.quantity) || 0);
+    matGroups[v].total += (Number(m.rate) || Number(m.total) || 0);
     const ts = new Date(getDt(m.createdAt) || m.id || 0).getTime();
     if(ts > matGroups[v].latestAt) matGroups[v].latestAt = ts;
   });
@@ -1976,10 +2110,13 @@ function Transactions({user, sites, labourEntries}){
     const amt=Number(txnForm.amount);
     const newM=[...(s.payment?.methods||[]),{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
     const siteRef = doc(db, "sites", s.id.toString());
-    await updateDoc(siteRef, {
-      "payment.methods": newM,
-      "payment.paid": (s.payment?.paid||0)+amt
-    });
+    await setDoc(siteRef, {
+      payment: {
+        ...(s.payment || {}),
+        methods: newM,
+        paid: (s.payment?.paid||0)+amt
+      }
+    }, { merge: true });
     setTxnForm({siteId:"",amount:"",type:"Cash",date:""});setShowAdd(false);
   }
 
@@ -1987,25 +2124,40 @@ function Transactions({user, sites, labourEntries}){
 
   // Ongoing sites labour entries
   const ongoingSiteIds = sites.ongoing.map(s => s.id?.toString());
-  const activeLabourEntries = (labourEntries || []).filter(l => ongoingSiteIds.includes((l.siteId || "").toString()) && l.due > 0);
+  const activeLabourEntries = (labourEntries || []).filter(l => ongoingSiteIds.includes((l.siteId || "").toString()));
 
   return(
     <div>
-      <Hdr title="Transactions" sub="All payment records" action={user?.role === "Admin" ? <Btn onClick={()=>setShowAdd(true)}>+ Add Payment</Btn> : null}/>
+      <Hdr title="Transactions" sub="All payment records" />
       <Tabs tabs={txTabs} active={tab} onChange={setTab}/>
 
       {tab==="clients"&&user?.role === "Admin"&&(
         <Card>
           <Tbl cols={["Client","Site","Total Deal","Paid","Unpaid","Extra","Actions"]}
-            rows={[...sites.ongoing,...sites.completed].sort((a,b)=>b.id-a.id).map(s=>{
-              const total=s.payment?s.payment.totalDeal:s.totalCost,paid=s.payment?s.payment.paid:s.totalCost,unpaid=Math.max(0,total-paid),extra=Math.max(0,paid-total);
+            rows={[...sites.ongoing,...sites.completed].sort((a,b)=>{
+              const dealA = a.payment?.totalDeal ?? a.totalDeal ?? a.totalCost ?? 0;
+              const paidA = a.payment?.paid ?? a["payment.paid"] ?? (a.status === "completed" ? dealA : 0);
+              const unpaidA = Math.max(0, Number(dealA) - Number(paidA));
+
+              const dealB = b.payment?.totalDeal ?? b.totalDeal ?? b.totalCost ?? 0;
+              const paidB = b.payment?.paid ?? b["payment.paid"] ?? (b.status === "completed" ? dealB : 0);
+              const unpaidB = Math.max(0, Number(dealB) - Number(paidB));
+
+              if (unpaidA === 0 && unpaidB > 0) return 1;
+              if (unpaidB === 0 && unpaidA > 0) return -1;
+              return b.id - a.id;
+            }).map(s=>{
+              const total = s.payment?.totalDeal ?? s.totalDeal ?? s.totalCost ?? 0;
+              const paid = s.payment?.paid ?? s["payment.paid"] ?? (s.status === "completed" ? total : 0);
+              const unpaid = Math.max(0, Number(total) - Number(paid));
+              const extra = Math.max(0, Number(paid) - Number(total));
               return[
                 <div style={{display:"flex", flexDirection:"column"}}>
                   <span style={{fontWeight:700}}>{s.client}</span>
                   <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(s.createdAt) || s.id)}</span>
                 </div>,
                 s.name,fmt(total),<span style={{fontWeight:700,color:C.green}}>{fmt(paid)}</span>,<span style={{fontWeight:700,color:unpaid>0?C.red:C.green}}>{fmt(unpaid)}</span>,<span style={{color:C.gold,fontWeight:700}}>{fmt(extra)}</span>,
-                s.payment?<Btn small v="secondary" onClick={()=>{setEditTxn(s.id);setTxnForm({siteId:s.name,amount:"",type:"Cash",date:""});}}>+ Pay</Btn>:null
+                (unpaid > 0) ? <Btn small v="secondary" onClick={()=>{setEditTxn(s.id);setTxnForm({siteId:s.name,amount:"",type:"Cash",date:""});}}>+ Pay</Btn> : <span style={{color:C.g400,fontSize:12,fontWeight:600}}>Fully Paid</span>
               ];
             })}/>
         </Card>
@@ -2014,23 +2166,30 @@ function Transactions({user, sites, labourEntries}){
       {tab==="contractors"&&(
         <Card>
           <Tbl cols={["Contractor","Site","Work","Total","Paid","Remaining","Status","Actions"]}
-            rows={[...activeLabourEntries].sort((a,b)=>new Date(getDt(b.createdAt)||b.id||0)-new Date(getDt(a.createdAt)||a.id||0)).map(l => [
+            rows={[...activeLabourEntries].sort((a,b)=>{
+              const dueA = Number(a.due || a.remaining || 0);
+              const dueB = Number(b.due || b.remaining || 0);
+              if (dueA === 0 && dueB > 0) return 1;
+              if (dueB === 0 && dueA > 0) return -1;
+              return new Date(getDt(b.createdAt)||b.id||0)-new Date(getDt(a.createdAt)||a.id||0);
+            }).map(l => {
+              const currentDue = Number(l.due || l.remaining || 0);
+              return [
               <div style={{display:"flex", flexDirection:"column"}}>
                 <span style={{fontWeight:700}}>{l.contractor}</span>
                 <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(l.createdAt) || l.id)}</span>
               </div>, 
               l.siteName, l.workType, fmt(l.amount || l.total),
               <span style={{color:C.green,fontWeight:700}}>{fmt(l.paid || l.advance)}</span>,
-              <span style={{color:C.red,fontWeight:700}}>{fmt(l.due || l.remaining)}</span>,
+              <span style={{color:C.red,fontWeight:700}}>{fmt(currentDue)}</span>,
               <Bdg s={l.status}/>,
-              <Btn small v="secondary" onClick={async ()=>{
-                const newAdv=prompt(`Enter amount to pay for ${l.contractor} (Due: ${fmt(l.due || l.remaining)}):`);
+              currentDue > 0 ? <Btn small v="secondary" onClick={async ()=>{
+                const newAdv=prompt(`Enter amount to pay for ${l.contractor} (Due: ${fmt(currentDue)}):`);
                 if(!newAdv)return;
                 const amt=Number(newAdv);
                 if (amt <= 0) return;
                 
                 const currentPaid = Number(l.paid || l.advance || 0);
-                const currentDue = Number(l.due || l.remaining || 0);
                 const newPaid = currentPaid + amt;
                 const newDue = Math.max(0, currentDue - amt);
                 const newStatus = newDue <= 0 ? "Paid" : "Partial";
@@ -2041,8 +2200,8 @@ function Transactions({user, sites, labourEntries}){
                   due: newDue,
                   status: newStatus
                 });
-              }}>+ Pay</Btn>
-            ])}/>
+              }}>+ Pay</Btn> : <span style={{color:C.g400,fontSize:12,fontWeight:600}}>Fully Paid</span>
+            ];})}/>
         </Card>
       )}
 
@@ -2066,10 +2225,13 @@ function Transactions({user, sites, labourEntries}){
             const amt=Number(txnForm.amount);
             const newM=[...(s.payment?.methods||[]),{id:Date.now(),type:txnForm.type,amount:amt,date:txnForm.date||new Date().toLocaleDateString("en-IN")}];
             const siteRef = doc(db, "sites", s.id.toString());
-            await updateDoc(siteRef, {
-              "payment.methods": newM,
-              "payment.paid": (s.payment?.paid||0)+amt
-            });
+            await setDoc(siteRef, {
+              payment: {
+                ...(s.payment || {}),
+                methods: newM,
+                paid: (s.payment?.paid||0)+amt
+              }
+            }, { merge: true });
             setEditTxn(null);
           }}>Save</Btn>
           <Btn v="ghost" onClick={()=>setEditTxn(null)}>Cancel</Btn>
@@ -2097,24 +2259,28 @@ function Vouchers({materialEntries, labourEntries}){
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by vendor, contractor or site..."
         style={{border:`1.5px solid ${C.g200}`,borderRadius:12,padding:"10px 18px",fontSize:14,width:300,outline:"none",fontFamily:"inherit",background:C.offWhite,color:C.dark,marginBottom:18}}/>
       <Card>
-        <Tbl cols={["#","Type","Date","Site","Vendor/Contractor","Item/Work","Qty","Rate","Total","Paid","Due","Status"]}
-          rows={list.map(v=>[
-            <span style={{color:C.g400,fontSize:12}}>{v.n}</span>,
-            <Bdg s={v.type}/>,
-            <div style={{display:"flex", flexDirection:"column"}}>
-              <span style={{fontSize:12,color:C.g400}}>{v.date ? new Date(v.date).toLocaleDateString("en-IN") : "N/A"}</span>
-              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(v.createdAt) || v.id)}</span>
-            </div>,
-            <span style={{fontSize:12,color:C.g500}}>{v.siteName || "N/A"}</span>,
-            <span style={{fontWeight:600}}>{v.nameOrVendor || "N/A"}</span>,
-            v.desc || "N/A",
-            v.quantity || v.qty || v.unit || "-",
-            fmt(v.rate || v.amount || 0),
-            <span style={{fontWeight:700,color:C.dark}}>{fmt(v.type === "Material" ? ((v.rate * (v.quantity || v.qty)) || v.total) : (v.amount || v.total))}</span>,
-            <span style={{fontWeight:700,color:C.green}}>{fmt(v.paid || v.advance || 0)}</span>,
-            <span style={{fontWeight:700,color:C.red}}>{fmt(v.due || v.remaining || 0)}</span>,
-            <Bdg s={v.status}/>
-          ])}/>
+        <Tbl cols={["#","Type","Date","Site","Vendor/Contractor","Item/Work","Qty","Rate","Paid","Due","Status"]}
+          rows={list.map(v=>{
+            const t = Number(v.rate || v.amount || v.total || 0);
+            const p = Number(v.paid || v.advance || 0);
+            const d = Math.max(0, t - p);
+            return [
+              <span style={{color:C.g400,fontSize:12}}>{v.n}</span>,
+              <Bdg s={v.type}/>,
+              <div style={{display:"flex", flexDirection:"column"}}>
+                <span style={{fontSize:12,color:C.g400}}>{v.date ? new Date(v.date).toLocaleDateString("en-IN") : "N/A"}</span>
+                <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(v.createdAt) || v.id)}</span>
+              </div>,
+              <span style={{fontSize:12,color:C.g500}}>{v.siteName || "N/A"}</span>,
+              <span style={{fontWeight:600}}>{v.nameOrVendor || "N/A"}</span>,
+              v.desc || "N/A",
+              v.quantity || v.qty || v.unit || "-",
+              <span style={{fontWeight:700,color:C.dark}}>{fmt(t)}</span>,
+              <span style={{fontWeight:700,color:C.green}}>{fmt(p)}</span>,
+              <span style={{fontWeight:700,color:C.red}}>{fmt(d)}</span>,
+              <Bdg s={v.status}/>
+            ];
+          })}/>
       </Card>
     </div>
   );
@@ -2226,19 +2392,20 @@ function Clients({user, clients, sites}){
               <Btn small v="danger" onClick={async ()=>{
                 if (c.isSynced) {
                   if (confirm(`This client is synced from the Site "${c.site}". Deleting this will remove the client name from the site. Continue?`)) {
-                    await setDoc(doc(db, "sites", c.id.toString()), { client: "", contact: "" }, { merge: true });
+                    try {
+                      await setDoc(doc(db, "sites", c.id.toString().replace('site-', '')), { client: "", contact: "" }, { merge: true });
+                    } catch (err) {
+                      alert("Error updating site: " + err.message);
+                    }
                   }
                 } else {
                   if (confirm(`Are you sure you want to delete client "${c.name}"? It will be moved to the Trash Bin.`)) {
-                    const trashId = Date.now().toString();
-                    await setDoc(doc(db, "trash", trashId), {
-                      id: trashId,
-                      deletedAt: Date.now(),
-                      type: "Client",
-                      originalCollection: "clients",
-                      data: c
-                    });
-                    await deleteDoc(doc(db, "clients", c.id.toString()));
+                    await moveToTrash("Client", c, { originalCollection: "clients" });
+                    try {
+                      await deleteDoc(doc(db, "clients", c.id.toString()));
+                    } catch (err) {
+                      alert("Error deleting client: " + err.message);
+                    }
                   }
                 }
               }}>🗑️</Btn>
@@ -2267,13 +2434,15 @@ function Clients({user, clients, sites}){
 function Reports({sites, materialEntries, labourEntries}){
   const [chartOffset, setChartOffset] = useState(0);
   const rows=[...sites.ongoing,...sites.completed].map(s=>{
-    const total=s.payment?s.payment.totalDeal:s.totalCost,paid=s.payment?s.payment.paid:s.totalCost;
-    
-    // Compute expenses from real entries for this specific site
-    const matExp = (materialEntries || []).filter(m => m.siteId?.toString() === s.id?.toString()).reduce((a,m) => a + ((Number(m.rate||0)*Number(m.quantity||m.qty||0)) || Number(m.total||0)), 0);
-    const labExp = (labourEntries || []).filter(l => (l.siteId || "").toString() === s.id?.toString()).reduce((a,l) => a + Number(l.amount || l.total || 0), 0);
-    const billExp = (s.expenses?.bills || []).reduce((a,b) => a + Number(b.total || b.amount || 0), 0);
-    const expenses = matExp + labExp + billExp;
+    // Revenue: sum of all actual client payment methods collected
+    const methodsTotal = (s.payment?.methods || []).reduce((a,m) => a + Number(m.amount||0), 0);
+    const paid = s.payment?.paid || methodsTotal || (s.status === "completed" ? (s.totalCost || 0) : 0);
+    const total = s.payment?.totalDeal || s.totalCost || 0;
+
+    // Expenses: only what has actually been paid out (not billed total)
+    const matExp = (materialEntries || []).filter(m => m.siteId?.toString() === s.id?.toString()).reduce((a,m) => a + Number(m.paid||m.advance||0), 0);
+    const labExp = (labourEntries || []).filter(l => (l.siteId || "").toString() === s.id?.toString()).reduce((a,l) => a + Number(l.paid||l.advance||0), 0);
+    const expenses = matExp + labExp;
     
     return{client:s.client,site:s.name,total,paid,unpaid:Math.max(0,total-paid),refund:Math.max(0,paid-total),expenses,profit:paid-expenses};
   });
@@ -3500,9 +3669,9 @@ export default function App(){
       snapshot.forEach(doc => {
         const data = doc.data();
         if (data.status === "completed") {
-          completed.push(data);
+          completed.push({ id: doc.id, ...data });
         } else {
-          ongoing.push(data);
+          ongoing.push({ id: doc.id, ...data });
         }
       });
       setSites({ ongoing, completed });
@@ -3511,7 +3680,7 @@ export default function App(){
     const unsubClients = onSnapshot(collection(db, "clients"), (snapshot) => {
       const list = [];
       snapshot.forEach(doc => {
-        list.push(doc.data());
+        list.push({ id: doc.id, ...doc.data() });
       });
       setClients(list);
     }, (err) => { console.error(err); setFirebaseError("Clients: " + err.message); });
