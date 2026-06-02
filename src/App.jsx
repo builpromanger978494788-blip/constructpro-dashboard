@@ -1660,7 +1660,7 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
         siteName: siteName,
         quantity: quantity,
         unit: form.unit,
-        rate: rate,
+        rate: amount,
         advance: advance,
         paid: paid,
         due: due,
