@@ -167,7 +167,7 @@ function computeRealChartData(sites, materialEntries, labourEntries, offset = 0)
     const dt = getMonthYear(m.date);
     if (dt) {
       const match = targetMonths.find(t => t.key === dt.key && t.year === dt.year);
-      if (match) match.expense += (Number(m.rate || 0) * Number(m.quantity || m.qty || 0)) || Number(m.total || 0);
+      if (match) match.expense += Number(m.rate || 0) || Number(m.total || 0);
     }
   });
   // Expense from REAL Firebase labourEntries collection
@@ -195,7 +195,7 @@ function computeRealChartData(sites, materialEntries, labourEntries, offset = 0)
 
 function computeRealPieData(sites, materialEntries, labourEntries) {
   let material = (materialEntries || []).reduce((a, m) =>
-    a + ((Number(m.rate || 0) * Number(m.quantity || m.qty || 0)) || Number(m.total || 0)), 0);
+    a + (Number(m.rate || 0) || Number(m.total || 0)), 0);
   let labour = (labourEntries || []).reduce((a, l) =>
     a + Number(l.amount || l.total || 0), 0);
   let overhead = 0;
