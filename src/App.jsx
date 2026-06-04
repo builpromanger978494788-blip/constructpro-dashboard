@@ -3071,16 +3071,19 @@ function WebsiteCMS() {
       <Hdr title="Website CMS" sub="Manage public website content directly." />
       
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        {["brand","hero","about","directors","staff","services","portfolio","faq"].map(t=>(
+        {["brand","hero","stats","whyUs","process","about","values","team","services","portfolio","contact"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{padding:"10px 18px",borderRadius:12,border:`1.5px solid ${tab===t?C.sageDark:C.g200}`,background:tab===t?C.pistaPale:"#fff",color:tab===t?C.sageDark:C.g500,fontWeight:700,cursor:"pointer",fontSize:14,transition:"all 0.2s"}} className="btn-press">
             {t === "brand" && "🏢 Brand"}
             {t === "hero" && "🖼️ Hero"}
+            {t === "stats" && "📊 Stats"}
+            {t === "whyUs" && "✨ Why Us"}
+            {t === "process" && "⚙️ Process"}
             {t === "about" && "ℹ️ About"}
-            {t === "directors" && "👔 Directors"}
-            {t === "staff" && "👷 Staff"}
+            {t === "values" && "💎 Values"}
+            {t === "team" && "👥 Team"}
             {t === "services" && "🛠️ Services"}
             {t === "portfolio" && "🏗️ Projects"}
-            {t === "faq" && "❓ FAQs"}
+            {t === "contact" && "📞 Contact"}
           </button>
         ))}
       </div>
@@ -3110,6 +3113,8 @@ function WebsiteCMS() {
             const url = await uploadImage(f);
             if(url) setData({...data, hero: {...data.hero, imageUrl: url}});
           }} />
+          <Fld label="Hero Card Number (e.g. 250+)" value={data.hero?.cardNum||""} onChange={e => setData({...data, hero: {...data.hero, cardNum: e.target.value}})} />
+          <Fld label="Hero Card Label (e.g. Projects Delivered)" value={data.hero?.cardLabel||""} onChange={e => setData({...data, hero: {...data.hero, cardLabel: e.target.value}})} />
           <Btn onClick={() => handleUpdate("hero", data.hero)}>Save Hero Section</Btn>
         </Card>
       )}
@@ -3130,98 +3135,58 @@ function WebsiteCMS() {
         </Card>
       )}
 
-      {tab === "directors" && (
+      {tab === "stats" && (
         <Card style={{marginBottom:20, padding: 24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
-            <div style={{fontWeight:700, fontSize:18}}>Board of Directors</div>
+            <div style={{fontWeight:700, fontSize:18}}>Stats Counter Section</div>
             <Btn small onClick={() => {
-              const newD = [...(data.directors || []), { id: Date.now(), name: "", role: "", description: "", imageUrl: "" }];
-              setData({...data, directors: newD});
-            }}>+ Add Director</Btn>
+              const n = [...(data.stats || []), { id: Date.now(), number: 0, label: "" }];
+              setData({...data, stats: n});
+            }}>+ Add Stat</Btn>
           </div>
-          {(data.directors || []).map((d, i) => (
-            <div key={d.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
-              <div style={{position: "absolute", top: 10, right: 10}}>
-                <Btn small v="danger" onClick={() => {
-                  if(confirm("Remove this director?")) {
-                    const newD = data.directors.filter((_, idx) => idx !== i);
-                    setData({...data, directors: newD});
-                  }
-                }}>🗑️</Btn>
-              </div>
-              <Fld label="Name" value={d.name} onChange={e => {
-                const newD = [...data.directors];
-                newD[i].name = e.target.value;
-                setData({...data, directors: newD});
-              }} />
-              <Fld label="Role" value={d.role} onChange={e => {
-                const newD = [...data.directors];
-                newD[i].role = e.target.value;
-                setData({...data, directors: newD});
-              }} />
-              <Fld label="Description" as="textarea" rows={2} value={d.description} onChange={e => {
-                const newD = [...data.directors];
-                newD[i].description = e.target.value;
-                setData({...data, directors: newD});
-              }} />
-              <ImgUpload value={d.imageUrl} width={80} onUpload={async f => {
-                const url = await uploadImage(f);
-                if(url) {
-                  const newD = [...data.directors];
-                  newD[i].imageUrl = url;
-                  setData({...data, directors: newD});
-                }
-              }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                <Btn small onClick={() => handleUpdate("directors", data.directors)}>💾 Save Director</Btn>
-              </div>
+          {(data.stats || []).map((s, i) => (
+            <div key={s.id||i} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position:"relative"}}>
+              <div style={{position:"absolute",top:10,right:10}}><Btn small v="danger" onClick={() => { const n = data.stats.filter((_,idx)=>idx!==i); setData({...data, stats:n}); }}>🗑️</Btn></div>
+              <Fld label="Number" type="number" value={s.number} onChange={e => { const n=[...data.stats]; n[i].number=parseInt(e.target.value)||0; setData({...data,stats:n}); }} />
+              <Fld label="Label" value={s.label} onChange={e => { const n=[...data.stats]; n[i].label=e.target.value; setData({...data,stats:n}); }} />
             </div>
           ))}
+          <Btn onClick={() => handleUpdate("stats", data.stats)}>💾 Save Stats</Btn>
         </Card>
       )}
 
-      {tab === "staff" && (
+      {tab === "whyUs" && (
         <Card style={{marginBottom:20, padding: 24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
-            <div style={{fontWeight:700, fontSize:18}}>Our Core Staff</div>
-            <Btn small onClick={() => {
-              const newS = [...(data.staff || []), { id: Date.now(), name: "", role: "", imageUrl: "" }];
-              setData({...data, staff: newS});
-            }}>+ Add Staff</Btn>
+            <div style={{fontWeight:700, fontSize:18}}>Why Choose Us</div>
+            <Btn small onClick={() => { const n=[...(data.whyUs||[]),{id:Date.now(),icon:"◈",title:"",description:""}]; setData({...data,whyUs:n}); }}>+ Add Card</Btn>
           </div>
-          {(data.staff || []).map((s, i) => (
-            <div key={s.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
-              <div style={{position: "absolute", top: 10, right: 10}}>
-                <Btn small v="danger" onClick={() => {
-                  if(confirm("Remove this staff member?")) {
-                    const newS = data.staff.filter((_, idx) => idx !== i);
-                    setData({...data, staff: newS});
-                  }
-                }}>🗑️</Btn>
-              </div>
-              <Fld label="Name" value={s.name} onChange={e => {
-                const newS = [...data.staff];
-                newS[i].name = e.target.value;
-                setData({...data, staff: newS});
-              }} />
-              <Fld label="Role" value={s.role} onChange={e => {
-                const newS = [...data.staff];
-                newS[i].role = e.target.value;
-                setData({...data, staff: newS});
-              }} />
-              <ImgUpload value={s.imageUrl} width={60} onUpload={async f => {
-                const url = await uploadImage(f);
-                if(url) {
-                  const newS = [...data.staff];
-                  newS[i].imageUrl = url;
-                  setData({...data, staff: newS});
-                }
-              }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                <Btn small onClick={() => handleUpdate("staff", data.staff)}>💾 Save Staff Member</Btn>
-              </div>
+          {(data.whyUs || []).map((w, i) => (
+            <div key={w.id||i} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position:"relative"}}>
+              <div style={{position:"absolute",top:10,right:10}}><Btn small v="danger" onClick={() => { const n=data.whyUs.filter((_,idx)=>idx!==i); setData({...data,whyUs:n}); }}>🗑️</Btn></div>
+              <Fld label="Icon (Symbol/Emoji)" value={w.icon} onChange={e => { const n=[...data.whyUs]; n[i].icon=e.target.value; setData({...data,whyUs:n}); }} />
+              <Fld label="Title" value={w.title} onChange={e => { const n=[...data.whyUs]; n[i].title=e.target.value; setData({...data,whyUs:n}); }} />
+              <Fld label="Description" as="textarea" rows={2} value={w.description} onChange={e => { const n=[...data.whyUs]; n[i].description=e.target.value; setData({...data,whyUs:n}); }} />
             </div>
           ))}
+          <Btn onClick={() => handleUpdate("whyUs", data.whyUs)}>💾 Save Why Us</Btn>
+        </Card>
+      )}
+
+      {tab === "process" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+            <div style={{fontWeight:700, fontSize:18}}>Our Process Steps</div>
+            <Btn small onClick={() => { const n=[...(data.process||[]),{id:Date.now(),title:"",description:""}]; setData({...data,process:n}); }}>+ Add Step</Btn>
+          </div>
+          {(data.process || []).map((p, i) => (
+            <div key={p.id||i} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position:"relative"}}>
+              <div style={{position:"absolute",top:10,right:10}}><Btn small v="danger" onClick={() => { const n=data.process.filter((_,idx)=>idx!==i); setData({...data,process:n}); }}>🗑️</Btn></div>
+              <Fld label={`Step ${i+1} Title`} value={p.title} onChange={e => { const n=[...data.process]; n[i].title=e.target.value; setData({...data,process:n}); }} />
+              <Fld label="Description" as="textarea" rows={2} value={p.description} onChange={e => { const n=[...data.process]; n[i].description=e.target.value; setData({...data,process:n}); }} />
+            </div>
+          ))}
+          <Btn onClick={() => handleUpdate("process", data.process)}>💾 Save Process</Btn>
         </Card>
       )}
 
@@ -3291,7 +3256,7 @@ function WebsiteCMS() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
             <div style={{fontWeight:700, fontSize:18}}>Recent Projects Showcase</div>
             <Btn small onClick={() => {
-              const newP = [...(data.portfolio?.projects || []), { id: Date.now(), title: "", category: "", imageUrl: "" }];
+              const newP = [...(data.portfolio?.projects || []), { id: Date.now(), title: "", category: "", location: "", year: "", imageUrl: "" }];
               setData({...data, portfolio: {...data.portfolio, projects: newP}});
             }}>+ Add New Project</Btn>
           </div>
@@ -3313,6 +3278,16 @@ function WebsiteCMS() {
               <Fld label="Category" value={p.category} onChange={e => {
                 const newP = [...data.portfolio.projects];
                 newP[i].category = e.target.value;
+                setData({...data, portfolio: {...data.portfolio, projects: newP}});
+              }} />
+              <Fld label="Location" value={p.location||""} onChange={e => {
+                const newP = [...data.portfolio.projects];
+                newP[i].location = e.target.value;
+                setData({...data, portfolio: {...data.portfolio, projects: newP}});
+              }} />
+              <Fld label="Year" value={p.year||""} onChange={e => {
+                const newP = [...data.portfolio.projects];
+                newP[i].year = e.target.value;
                 setData({...data, portfolio: {...data.portfolio, projects: newP}});
               }} />
               <div style={{ marginTop: 10 }}>
@@ -3357,45 +3332,54 @@ function WebsiteCMS() {
         </Card>
       )}
 
-      {tab === "faq" && (
+      {tab === "values" && (
         <Card style={{marginBottom:20, padding: 24}}>
-          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>Client FAQs Section</div>
-          <Fld label="Section Title" value={data.faq?.title||""} onChange={e => setData({...data, faq: {...data.faq, title: e.target.value}})} />
-          <Fld label="Subtitle" value={data.faq?.subtitle||""} onChange={e => setData({...data, faq: {...data.faq, subtitle: e.target.value}})} />
-          <Fld label="Description" as="textarea" rows={2} value={data.faq?.description||""} onChange={e => setData({...data, faq: {...data.faq, description: e.target.value}})} />
-          
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15, marginTop:20}}>
-            <div style={{fontWeight:700, fontSize:16}}>Questions List</div>
-            <Btn small onClick={() => {
-              const newL = [...(data.faq?.list || []), { id: Date.now(), question: "", answer: "" }];
-              setData({...data, faq: {...data.faq, list: newL}});
-            }}>+ Add FAQ</Btn>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+            <div style={{fontWeight:700, fontSize:18}}>Core Values</div>
+            <Btn small onClick={() => { const n=[...(data.values||[]),{id:Date.now(),title:"",description:""}]; setData({...data,values:n}); }}>+ Add Value</Btn>
           </div>
-          {data.faq?.list?.map((f, i) => (
-            <div key={f.id} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position: "relative"}}>
-              <div style={{position: "absolute", top: 10, right: 10}}>
-                <Btn small v="danger" onClick={() => {
-                  if(confirm("Remove this FAQ?")) {
-                    const newL = data.faq.list.filter((_, idx) => idx !== i);
-                    setData({...data, faq: {...data.faq, list: newL}});
-                  }
-                }}>🗑️</Btn>
-              </div>
-              <Fld label="Question" value={f.question} onChange={e => {
-                const newL = [...data.faq.list];
-                newL[i].question = e.target.value;
-                setData({...data, faq: {...data.faq, list: newL}});
-              }} />
-              <Fld label="Answer" as="textarea" rows={3} value={f.answer} onChange={e => {
-                const newL = [...data.faq.list];
-                newL[i].answer = e.target.value;
-                setData({...data, faq: {...data.faq, list: newL}});
-              }} />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                <Btn small onClick={() => handleUpdate("faq", data.faq)}>💾 Save FAQ</Btn>
-              </div>
+          {(data.values || []).map((v, i) => (
+            <div key={v.id||i} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position:"relative"}}>
+              <div style={{position:"absolute",top:10,right:10}}><Btn small v="danger" onClick={() => { const n=data.values.filter((_,idx)=>idx!==i); setData({...data,values:n}); }}>🗑️</Btn></div>
+              <Fld label="Title" value={v.title} onChange={e => { const n=[...data.values]; n[i].title=e.target.value; setData({...data,values:n}); }} />
+              <Fld label="Description" as="textarea" rows={2} value={v.description} onChange={e => { const n=[...data.values]; n[i].description=e.target.value; setData({...data,values:n}); }} />
             </div>
           ))}
+          <Btn onClick={() => handleUpdate("values", data.values)}>💾 Save Values</Btn>
+        </Card>
+      )}
+
+      {tab === "team" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+            <div style={{fontWeight:700, fontSize:18}}>Team Members</div>
+            <Btn small onClick={() => { const n=[...(data.team||[]),{id:Date.now(),name:"",role:"",bio:"",imageUrl:"",linkedin:"",twitter:""}]; setData({...data,team:n}); }}>+ Add Member</Btn>
+          </div>
+          {(data.team || []).map((t, i) => (
+            <div key={t.id||i} style={{border:"1px solid #eee", padding:15, marginBottom:10, borderRadius:8, position:"relative"}}>
+              <div style={{position:"absolute",top:10,right:10}}><Btn small v="danger" onClick={() => { const n=data.team.filter((_,idx)=>idx!==i); setData({...data,team:n}); }}>🗑️</Btn></div>
+              <Fld label="Name" value={t.name} onChange={e => { const n=[...data.team]; n[i].name=e.target.value; setData({...data,team:n}); }} />
+              <Fld label="Role" value={t.role} onChange={e => { const n=[...data.team]; n[i].role=e.target.value; setData({...data,team:n}); }} />
+              <Fld label="Bio" as="textarea" rows={2} value={t.bio||""} onChange={e => { const n=[...data.team]; n[i].bio=e.target.value; setData({...data,team:n}); }} />
+              <Fld label="LinkedIn URL" value={t.linkedin||""} onChange={e => { const n=[...data.team]; n[i].linkedin=e.target.value; setData({...data,team:n}); }} />
+              <ImgUpload value={t.imageUrl} width={80} onUpload={async f => { const url=await uploadImage(f); if(url){const n=[...data.team]; n[i].imageUrl=url; setData({...data,team:n});} }} />
+            </div>
+          ))}
+          <Btn onClick={() => handleUpdate("team", data.team)}>💾 Save Team</Btn>
+        </Card>
+      )}
+
+      {tab === "contact" && (
+        <Card style={{marginBottom:20, padding: 24}}>
+          <div style={{fontWeight:700, fontSize:18, marginBottom:15}}>Contact Information</div>
+          <Fld label="Address" as="textarea" rows={2} value={data.contact?.address||""} onChange={e => setData({...data, contact:{...data.contact, address:e.target.value}})} />
+          <Fld label="Phone" value={data.contact?.phone||""} onChange={e => setData({...data, contact:{...data.contact, phone:e.target.value}})} />
+          <Fld label="Email" value={data.contact?.email||""} onChange={e => setData({...data, contact:{...data.contact, email:e.target.value}})} />
+          <Fld label="Working Hours" value={data.contact?.hours||""} onChange={e => setData({...data, contact:{...data.contact, hours:e.target.value}})} />
+          <Fld label="LinkedIn URL" value={data.contact?.linkedin||""} onChange={e => setData({...data, contact:{...data.contact, linkedin:e.target.value}})} />
+          <Fld label="Instagram URL" value={data.contact?.instagram||""} onChange={e => setData({...data, contact:{...data.contact, instagram:e.target.value}})} />
+          <Fld label="Twitter URL" value={data.contact?.twitter||""} onChange={e => setData({...data, contact:{...data.contact, twitter:e.target.value}})} />
+          <Btn onClick={() => handleUpdate("contact", data.contact)}>💾 Save Contact Info</Btn>
         </Card>
       )}
       <div style={{height:100}}></div>
