@@ -934,6 +934,7 @@ function PayTab({site}){
 // ─── MATERIAL TAB ─────────────────────────────────────────────
 function MatTab({site, sites, materialEntries}){
   const[showAdd,setShowAdd]=useState(false);
+  const[editEntry,setEditEntry]=useState(null);
   
   const fetchedMaterials = materialEntries.filter(m => m.siteId?.toString() === site.id?.toString());
   const siteMaterials = [...(site.expenses?.material || []), ...fetchedMaterials].sort((a,b) => 
@@ -944,7 +945,7 @@ function MatTab({site, sites, materialEntries}){
     <div>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn onClick={()=>{setShowAdd(true);}}>➕ Add Material</Btn></div>
       <Card>
-        <Tbl cols={["Date","Material","Vendor","Qty","Unit","Total Amount","Paid","Due","Status"]}
+        <Tbl cols={["Date","Material","Vendor","Qty","Unit","Total Amount","Paid","Due","Status","Action"]}
           rows={siteMaterials.map(m=>[
             <span style={{fontSize:12,color:C.g400}}>{new Date(m.date || getDt(m.createdAt) || m.id || 0).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</span>,
             <span style={{fontWeight:600,color:C.dark}}>{m.material}</span>,m.vendor,
@@ -952,11 +953,15 @@ function MatTab({site, sites, materialEntries}){
             <span style={{fontWeight:700}}>{fmt(m.rate || m.total || 0)}</span>,
             <span style={{color:C.green,fontWeight:600}}>{fmt(m.paid ?? m.advance ?? 0)}</span>,
             <span style={{color:C.red,fontWeight:600}}>{fmt(Math.max(0, Number(m.rate || m.total || 0) - Number(m.paid ?? m.advance ?? 0)))}</span>,
-            <Bdg s={m.status}/>
+            <Bdg s={m.status}/>,
+            <Btn small v="secondary" onClick={()=>{setEditEntry(m)}}>✏️ Edit</Btn>
           ])}/>
       </Card>
       {showAdd&&<Modal title="Add Material" onClose={()=>{setShowAdd(false);}} w={560}>
         <MaterialForm sites={sites} defaultSiteId={site.id} onSaved={()=>setShowAdd(false)} />
+      </Modal>}
+      {editEntry&&<Modal title="Edit Material" onClose={()=>{setEditEntry(null);}} w={560}>
+        <MaterialForm sites={sites} editData={editEntry} onSaved={()=>setEditEntry(null)} />
       </Modal>}
     </div>
   );
@@ -966,6 +971,7 @@ function MatTab({site, sites, materialEntries}){
 function LabTab({site, sites, labourEntries}){
   const[showAdd,setShowAdd]=useState(false);
   const[detailView,setDetailView]=useState(null);
+  const[editEntry,setEditEntry]=useState(null);
   
   const fetchedLabours = labourEntries.filter(l => (l.siteId || "").toString() === site.id?.toString());
   const siteLabours = [...(site.expenses?.labour || []), ...fetchedLabours].sort((a,b) => 
@@ -993,19 +999,23 @@ function LabTab({site, sites, labourEntries}){
         </div>
         <div style={{fontSize:18,fontWeight:800,color:C.dark,marginBottom:14}}>Entries for {detailView.name}</div>
         <Card>
-          <Tbl cols={["Date","Work Type","Rate (₹)","Paid (₹)","Due (₹)","Status"]}
+          <Tbl cols={["Date","Work Type","Rate (₹)","Paid (₹)","Due (₹)","Status","Action"]}
             rows={detailView.entries.map(l => [
               <span style={{fontSize:12,color:C.g400}}>{new Date(l.date || getDt(l.createdAt) || l.id || 0).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</span>,
               <span style={{fontWeight:600,color:C.dark}}>{l.workType || l.work}</span>,
               <span style={{fontWeight:700}}>{fmt(l.amount || l.total)}</span>,
               <span style={{color:C.green,fontWeight:600}}>{fmt(l.paid || l.advance || 0)}</span>,
               <span style={{color:C.red,fontWeight:600}}>{fmt(Math.max(0, Number(l.amount || l.total || 0) - Number(l.paid || l.advance || 0)))}</span>,
-              <Bdg s={l.status}/>
+              <Bdg s={l.status}/>,
+              <Btn small v="secondary" onClick={()=>{setEditEntry(l)}}>✏️ Edit</Btn>
             ])}
           />
         </Card>
         {showAdd&&<Modal title="Add Labour Entry" onClose={()=>{setShowAdd(false);}}>
           <LabourForm sites={sites} defaultSiteId={site.id} defaultContractor={detailView.name} onSaved={()=>{setShowAdd(false); setDetailView(null);}} />
+        </Modal>}
+        {editEntry&&<Modal title="Edit Labour Entry" onClose={()=>{setEditEntry(null);}}>
+          <LabourForm sites={sites} editData={editEntry} onSaved={()=>setEditEntry(null)} />
         </Modal>}
       </div>
     );
@@ -1601,8 +1611,16 @@ function Sites({user, sites, materialEntries, labourEntries}){
 }
 
 // ─── SHARED FORMS & ADD ENTRY ─────────────────────────────────
-function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
+function MaterialForm({ sites, defaultSiteId = null, onSaved, editData = null }) {
   const [form, setForm] = useState(() => {
+    if (editData) {
+      return {
+        material: editData.material || "", vendor: editData.vendor || "", siteId: editData.siteId || defaultSiteId || "", 
+        quantity: editData.quantity || editData.qty || "", unit: editData.unit || "COUNT", rate: editData.rate || editData.total || "", 
+        advance: editData.advance || editData.paid || "0", 
+        date: editData.date ? new Date(editData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0], status: editData.status || "Partial"
+      };
+    }
     const saved = localStorage.getItem("materialFormData");
     if (saved) {
       try {
@@ -1621,8 +1639,8 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("materialFormData", JSON.stringify(form));
-  }, [form]);
+    if (!editData) localStorage.setItem("materialFormData", JSON.stringify(form));
+  }, [form, editData]);
 
   const siteOpts = sites.ongoing.concat(sites.completed);
 
@@ -1653,28 +1671,47 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
     }
 
     try {
-      await addDoc(collection(db, "material_entries"), {
-        material: form.material,
-        vendor: form.vendor,
-        siteId: form.siteId,
-        siteName: siteName,
-        quantity: quantity,
-        unit: form.unit,
-        rate: amount,
-        advance: advance,
-        paid: paid,
-        due: due,
-        status: form.status,
-        date: new Date(form.date).toISOString(),
-        createdAt: serverTimestamp()
-      });
-      localStorage.removeItem("materialFormData");
-      setForm({
-        material: "", vendor: "", siteId: defaultSiteId || "", 
-        quantity: "", unit: "COUNT", rate: "", advance: "0", 
-        date: new Date().toISOString().split('T')[0], status: "Partial"
-      });
-      alert("Material entry saved successfully!");
+      if (editData) {
+        const ref = doc(db, "material_entries", editData.id.toString());
+        await updateDoc(ref, {
+          material: form.material,
+          vendor: form.vendor,
+          siteId: form.siteId,
+          siteName: siteName,
+          quantity: quantity,
+          unit: form.unit,
+          rate: amount,
+          advance: advance,
+          paid: paid,
+          due: due,
+          status: form.status,
+          date: new Date(form.date).toISOString(),
+        });
+        alert("Material entry updated successfully!");
+      } else {
+        await addDoc(collection(db, "material_entries"), {
+          material: form.material,
+          vendor: form.vendor,
+          siteId: form.siteId,
+          siteName: siteName,
+          quantity: quantity,
+          unit: form.unit,
+          rate: amount,
+          advance: advance,
+          paid: paid,
+          due: due,
+          status: form.status,
+          date: new Date(form.date).toISOString(),
+          createdAt: serverTimestamp()
+        });
+        localStorage.removeItem("materialFormData");
+        setForm({
+          material: "", vendor: "", siteId: defaultSiteId || "", 
+          quantity: "", unit: "COUNT", rate: "", advance: "0", 
+          date: new Date().toISOString().split('T')[0], status: "Partial"
+        });
+        alert("Material entry saved successfully!");
+      }
       if (onSaved) onSaved();
     } catch (e) {
       setErr(e.message);
@@ -1715,21 +1752,28 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved }) {
         <Fld label="TOTAL AMOUNT (₹)" type="number" value={form.rate} onChange={e=>setForm({...form,rate:e.target.value})}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
-        <Fld label="ADVANCE (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
+        <Fld label="PAID (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
         <Fld label="DATE" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
         <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Advance", "Full"]}/>
       </div>
       {err && <div style={{color: C.red, fontSize: 13, marginTop: -4, marginBottom: 10}}>{err}</div>}
       <div style={{display:"flex",gap:10,marginTop:10}}>
-        <button onClick={save} style={{background:C.green,color:"#fff",border:"none",borderRadius:20,padding:"10px 24px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>Save</button>
+        <button onClick={save} style={{background:C.green,color:"#fff",border:"none",borderRadius:20,padding:"10px 24px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{editData ? "Update" : "Save"}</button>
         {onSaved && <Btn v="ghost" onClick={onSaved}>Cancel</Btn>}
       </div>
     </div>
   );
 }
 
-function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onSaved }) {
+function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onSaved, editData = null }) {
   const [form, setForm] = useState(() => {
+    if (editData) {
+      return {
+        contractor: editData.contractor || defaultContractor || "", siteId: editData.siteId || defaultSiteId || "", 
+        workType: editData.workType || editData.work || "", amount: editData.amount || editData.total || "", 
+        date: editData.date ? new Date(editData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0], status: editData.status || "Unpaid"
+      };
+    }
     const saved = localStorage.getItem("labourFormData");
     if (saved) {
       try {
@@ -1741,15 +1785,15 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
     }
     return {
       contractor: defaultContractor || "", siteId: defaultSiteId || "", 
-      workType: "", amount: "", advance: "0",
-      date: new Date().toISOString().split('T')[0], status: "Partial"
+      workType: "", amount: "", 
+      date: new Date().toISOString().split('T')[0], status: "Unpaid"
     };
   });
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("labourFormData", JSON.stringify(form));
-  }, [form]);
+    if (!editData) localStorage.setItem("labourFormData", JSON.stringify(form));
+  }, [form, editData]);
   
   const siteOpts = sites.ongoing.concat(sites.completed);
 
@@ -1765,7 +1809,6 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
     let paid = 0;
     let due = 0;
     const amount = Number(form.amount);
-    const advance = Number(form.advance) || 0;
     
     if (form.status === 'Full' || form.status === 'Paid') {
       paid = amount;
@@ -1773,32 +1816,47 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
     } else if (form.status === 'Unpaid') {
       paid = 0;
       due = amount;
-    } else if (form.status === 'Partial' || form.status === 'Advance') {
-      paid = advance;
-      due = amount - advance;
+    } else if (form.status === 'Advance') {
+      paid = amount;
+      due = 0;
     }
 
     try {
-      await addDoc(collection(db, "labour_entries"), {
-        contractor: form.contractor,
-        siteId: form.siteId,
-        siteName: siteName,
-        workType: form.workType,
-        amount: amount,
-        advance: advance,
-        paid: paid,
-        due: due,
-        status: form.status,
-        date: new Date(form.date).toISOString(),
-        createdAt: serverTimestamp()
-      });
-      localStorage.removeItem("labourFormData");
-      setForm({
-        contractor: "", siteId: defaultSiteId || "", 
-        workType: "", amount: "", advance: "0",
-        date: new Date().toISOString().split('T')[0], status: "Partial"
-      });
-      alert("Labour entry saved successfully!");
+      if (editData) {
+        const ref = doc(db, "labour_entries", editData.id.toString());
+        await updateDoc(ref, {
+          contractor: form.contractor,
+          siteId: form.siteId,
+          siteName: siteName,
+          workType: form.workType,
+          amount: amount,
+          paid: paid,
+          due: due,
+          status: form.status,
+          date: new Date(form.date).toISOString(),
+        });
+        alert("Labour entry updated successfully!");
+      } else {
+        await addDoc(collection(db, "labour_entries"), {
+          contractor: form.contractor,
+          siteId: form.siteId,
+          siteName: siteName,
+          workType: form.workType,
+          amount: amount,
+          paid: paid,
+          due: due,
+          status: form.status,
+          date: new Date(form.date).toISOString(),
+          createdAt: serverTimestamp()
+        });
+        localStorage.removeItem("labourFormData");
+        setForm({
+          contractor: "", siteId: defaultSiteId || "", 
+          workType: "", amount: "", 
+          date: new Date().toISOString().split('T')[0], status: "Unpaid"
+        });
+        alert("Labour entry saved successfully!");
+      }
       if (onSaved) onSaved();
     } catch (e) {
       setErr(e.message);
@@ -1827,13 +1885,12 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
         <Fld label="AMOUNT (₹)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
-        <Fld label="ADVANCE (₹)" type="number" value={form.advance} onChange={e=>setForm({...form,advance:e.target.value})}/>
         <Fld label="DATE" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Partial", "Advance", "Full"]}/>
+        <Fld label="STATUS" as="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})} options={["Unpaid", "Advance", "Full"]}/>
       </div>
       {err && <div style={{color: C.red, fontSize: 13, marginTop: -4, marginBottom: 10}}>{err}</div>}
       <div style={{display:"flex",gap:10,marginTop:10}}>
-        <button onClick={save} style={{background:C.green,color:"#fff",border:"none",borderRadius:20,padding:"10px 24px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>Save</button>
+        <button onClick={save} style={{background:C.green,color:"#fff",border:"none",borderRadius:20,padding:"10px 24px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{editData ? "Update" : "Save"}</button>
         {onSaved && <Btn v="ghost" onClick={onSaved}>Cancel</Btn>}
       </div>
     </div>
@@ -1858,8 +1915,9 @@ function AddEntry({ sites }) {
 }
 
 // ─── LEDGER ───────────────────────────────────────────────────
-function LedgerDetailTable({ type, name, entries }) {
+function LedgerDetailTable({ type, name, entries, sites }) {
   const [search, setSearch] = useState("");
+  const [editEntry, setEditEntry] = useState(null);
   
   const filtered = entries.filter(e => {
     const q = search.toLowerCase();
@@ -1935,17 +1993,18 @@ function LedgerDetailTable({ type, name, entries }) {
       </div>
       <Card>
         <Tbl 
-          cols={type === "Material" ? ["Sr. No", "Site Name", "Material Name", "Bill (₹)", "Paid (₹)", "Due (₹)"] : ["Sr. No", "Site Name", "Work Type", "Rate (₹)", "Paid (₹)", "Due (₹)"]}
+          cols={type === "Material" ? ["Sr. No", "Site Name", "Material Name", "Bill (₹)", "Paid (₹)", "Due (₹)", "Action"] : ["Sr. No", "Site Name", "Work Type", "Rate (₹)", "Paid (₹)", "Due (₹)", "Action"]}
           rows={filtered.map((e, i) => [
             i+1, 
             <div style={{display:"flex", flexDirection:"column"}}>
               <span>{e.siteName || "N/A"}</span>
-              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{fmtDate(getDt(e.createdAt) || e.id)}</span>
+              <span style={{fontSize:10,color:C.g400,fontStyle:"italic",marginTop:2}}>{new Date(e.date || getDt(e.createdAt) || e.id || 0).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
             </div>, 
             type === "Material" ? (e.material || "N/A") : (e.workType || "N/A"),
             <span style={{fontWeight:700}}>{fmt(type === "Material" ? (Number(e.rate) || Number(e.total) || 0) : e.amount)}</span>,
             <span style={{fontWeight:700,color:C.green}}>{fmt(e.paid || 0)}</span>,
-            <span style={{fontWeight:700,color:C.red}}>{fmt(Math.max(0, (type === "Material" ? (Number(e.rate) || Number(e.total) || 0) : Number(e.amount || 0)) - (e.paid || 0)))}</span>
+            <span style={{fontWeight:700,color:C.red}}>{fmt(Math.max(0, (type === "Material" ? (Number(e.rate) || Number(e.total) || 0) : Number(e.amount || 0)) - (e.paid || 0)))}</span>,
+            <Btn small v="secondary" onClick={()=>{setEditEntry(e)}}>✏️ Edit</Btn>
           ])}
         />
         <div style={{padding:"12px 14px",background:C.pistaPale,display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:14}}>
@@ -1957,11 +2016,17 @@ function LedgerDetailTable({ type, name, entries }) {
           </div>
         </div>
       </Card>
+      {editEntry && type === "Material" && <Modal title="Edit Material" onClose={()=>{setEditEntry(null);}} w={560}>
+        <MaterialForm sites={sites} editData={editEntry} onSaved={()=>setEditEntry(null)} />
+      </Modal>}
+      {editEntry && type === "Contractor" && <Modal title="Edit Labour" onClose={()=>{setEditEntry(null);}} w={560}>
+        <LabourForm sites={sites} editData={editEntry} onSaved={()=>setEditEntry(null)} />
+      </Modal>}
     </div>
   );
 }
 
-function Ledger({ materialEntries, labourEntries }) {
+function Ledger({ sites, materialEntries, labourEntries }) {
   const [tab, setTab] = useState("material");
   const [detailView, setDetailView] = useState(null);
 
@@ -1975,7 +2040,7 @@ function Ledger({ materialEntries, labourEntries }) {
         <div className="no-print" style={{marginBottom: 16}}>
           <button onClick={() => setDetailView(null)} style={{background:C.g100,border:"none",borderRadius:10,padding:"8px 16px",cursor:"pointer",fontWeight:700,color:C.g600}}>← Back to Ledger</button>
         </div>
-        <LedgerDetailTable type={detailView.type} name={detailView.name} entries={entries} />
+        <LedgerDetailTable type={detailView.type} name={detailView.name} entries={entries} sites={sites} />
       </div>
     );
   }
@@ -2242,8 +2307,9 @@ function Transactions({user, sites, labourEntries}){
 }
 
 // ─── VOUCHERS ─────────────────────────────────────────────────
-function Vouchers({materialEntries, labourEntries}){
+function Vouchers({sites, materialEntries, labourEntries}){
   const[search,setSearch]=useState("");
+  const[editEntry,setEditEntry]=useState(null);
   
   const all = [
     ...materialEntries.map(m => ({ ...m, type: "Material", desc: m.material, nameOrVendor: m.vendor })),
@@ -2259,7 +2325,7 @@ function Vouchers({materialEntries, labourEntries}){
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by vendor, contractor or site..."
         style={{border:`1.5px solid ${C.g200}`,borderRadius:12,padding:"10px 18px",fontSize:14,width:300,outline:"none",fontFamily:"inherit",background:C.offWhite,color:C.dark,marginBottom:18}}/>
       <Card>
-        <Tbl cols={["#","Type","Date","Site","Vendor/Contractor","Item/Work","Qty","Rate","Paid","Due","Status"]}
+        <Tbl cols={["#","Type","Date","Site","Vendor/Contractor","Item/Work","Qty","Rate","Paid","Due","Status","Action"]}
           rows={list.map(v=>{
             const t = Number(v.rate || v.amount || v.total || 0);
             const p = Number(v.paid || v.advance || 0);
@@ -2278,10 +2344,17 @@ function Vouchers({materialEntries, labourEntries}){
               <span style={{fontWeight:700,color:C.dark}}>{fmt(t)}</span>,
               <span style={{fontWeight:700,color:C.green}}>{fmt(p)}</span>,
               <span style={{fontWeight:700,color:C.red}}>{fmt(d)}</span>,
-              <Bdg s={v.status}/>
+              <Bdg s={v.status}/>,
+              <Btn small v="secondary" onClick={()=>{setEditEntry(v)}}>✏️ Edit</Btn>
             ];
           })}/>
       </Card>
+      {editEntry && editEntry.type === "Material" && <Modal title="Edit Material" onClose={()=>{setEditEntry(null);}} w={560}>
+        <MaterialForm sites={sites} editData={editEntry} onSaved={()=>setEditEntry(null)} />
+      </Modal>}
+      {editEntry && editEntry.type === "Labour" && <Modal title="Edit Labour" onClose={()=>{setEditEntry(null);}} w={560}>
+        <LabourForm sites={sites} editData={editEntry} onSaved={()=>setEditEntry(null)} />
+      </Modal>}
     </div>
   );
 }
@@ -4095,11 +4168,11 @@ export default function App(){
           {nav==="consultations"&&user.role==="Admin"&&<ConsultationsAdmin/>}
           {nav==="sites"&&<Sites user={user} sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="transactions"&&<ErrorBoundary><Transactions user={user} sites={sites} labourEntries={labourEntries}/></ErrorBoundary>}
-          {nav==="vouchers"&&<Vouchers materialEntries={materialEntries} labourEntries={labourEntries}/>}
+          {nav==="vouchers"&&<Vouchers sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="clients"&&<Clients user={user} clients={clients} sites={sites}/>}
           {nav==="reports"&&user.role==="Admin"&&<Reports sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="add-entry"&&<AddEntry sites={sites}/>}
-          {nav==="ledger"&&<Ledger materialEntries={materialEntries} labourEntries={labourEntries}/>}
+          {nav==="ledger"&&<Ledger sites={sites} materialEntries={materialEntries} labourEntries={labourEntries}/>}
           {nav==="users"&&user.role==="Admin"&&<UsersSection users={usersList}/>}
           {nav==="security"&&user.role==="Admin"&&<SecurityManager/>}
           {nav==="settings"&&<Settings user={user} onUpdateUser={setUser}/>}
