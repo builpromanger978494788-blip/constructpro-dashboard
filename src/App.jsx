@@ -317,6 +317,110 @@ function Fld({label,value,onChange,type="text",placeholder,as="input",options,di
     </div>
   );
 }
+function AutocompleteFld({label, value, onChange, placeholder, collectionType}) {
+  const [options, setOptions] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [filtered, setFiltered] = useState([]);
+  const wrapperRef = React.useRef(null);
+
+  useEffect(() => {
+    const q = query(collection(db, "autocomplete_options"), where("type", "==", collectionType));
+    const unsub = onSnapshot(q, (snap) => {
+      const opts = snap.docs.map(d => ({id: d.id, ...d.data()}));
+      setOptions(opts);
+    });
+    return () => unsub();
+  }, [collectionType]);
+
+  useEffect(() => {
+    if (value) {
+      setFiltered(options.filter(o => o.value.toLowerCase().includes(value.toLowerCase())));
+    } else {
+      setFiltered(options);
+    }
+  }, [value, options]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleDelete = async (e, id) => {
+    e.stopPropagation();
+    if (window.confirm("Are you sure you want to delete this suggestion?")) {
+      await deleteDoc(doc(db, "autocomplete_options", id));
+    }
+  };
+
+  const base={width:"100%",border:`1.5px solid ${C.g200}`,borderRadius:10,padding:"10px 14px",fontSize:14,outline:"none",fontFamily:"inherit",background:C.offWhite,boxSizing:"border-box",color:C.dark};
+
+  return (
+    <div style={{marginBottom:14, position: 'relative'}} ref={wrapperRef}>
+      {label && <div style={{fontSize:12,color:C.g500,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>{label}</div>}
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder={placeholder}
+        style={base}
+      />
+      {isOpen && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0,
+          background: '#fff', border: `1.5px solid ${C.g200}`, borderRadius: 10,
+          marginTop: 4, maxHeight: 200, overflowY: 'auto', zIndex: 100,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+        }}>
+          {filtered.map(opt => (
+            <div key={opt.id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '10px 14px', cursor: 'pointer', borderBottom: `1px solid ${C.g200}`
+            }} onClick={() => {
+              onChange({target: {value: opt.value}});
+              setIsOpen(false);
+            }}>
+              <span style={{fontSize: 14, color: C.dark}}>{opt.value}</span>
+              <button 
+                onClick={(e) => handleDelete(e, opt.id)}
+                style={{
+                  background: 'transparent', border: 'none', color: C.red, 
+                  cursor: 'pointer', padding: '4px', fontSize: 14, fontWeight: 'bold'
+                }}
+                title="Delete option"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function saveAutocompleteOption(type, value) {
+  if (!value || !value.trim()) return;
+  const val = value.trim();
+  const q = query(collection(db, "autocomplete_options"), where("type", "==", type), where("value", "==", val));
+  const snap = await getDocs(q);
+  if (snap.empty) {
+    await addDoc(collection(db, "autocomplete_options"), {
+      type,
+      value: val,
+      createdAt: serverTimestamp()
+    });
+  }
+}
+
 function Tbl({cols,rows,emptyMsg="No records"}){
   return(
     <div style={{overflowX:"auto"}}>
@@ -1713,6 +1817,9 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved, editData = null })
         alert("Material entry saved successfully!");
       }
       if (onSaved) onSaved();
+      
+      await saveAutocompleteOption("material", form.material);
+      await saveAutocompleteOption("vendor", form.vendor);
     } catch (e) {
       setErr(e.message);
     }
@@ -1735,8 +1842,8 @@ function MaterialForm({ sites, defaultSiteId = null, onSaved, editData = null })
         </div>
       )}
       <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <Fld label="MATERIAL" value={form.material} onChange={e=>setForm({...form,material:e.target.value})}/>
-        <Fld label="VENDOR" value={form.vendor} onChange={e=>setForm({...form,vendor:e.target.value})}/>
+        <AutocompleteFld label="MATERIAL" value={form.material} onChange={e=>setForm({...form,material:e.target.value})} collectionType="material" />
+        <AutocompleteFld label="VENDOR" value={form.vendor} onChange={e=>setForm({...form,vendor:e.target.value})} collectionType="vendor" />
       </div>
       <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{marginBottom: 14}}>
@@ -1858,6 +1965,9 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
         alert("Labour entry saved successfully!");
       }
       if (onSaved) onSaved();
+      
+      await saveAutocompleteOption("contractor", form.contractor);
+      await saveAutocompleteOption("work_type", form.workType);
     } catch (e) {
       setErr(e.message);
     }
@@ -1865,7 +1975,7 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
 
   return (
     <div>
-      <Fld label="CONTRACTOR" value={form.contractor} onChange={e=>setForm({...form,contractor:e.target.value})}/>
+      <AutocompleteFld label="CONTRACTOR" value={form.contractor} onChange={e=>setForm({...form,contractor:e.target.value})} collectionType="contractor" />
       {defaultSiteId ? (
         <div style={{marginBottom: 14}}>
           <div style={{fontSize:12,color:C.g500,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>SITE NAME</div>
@@ -1881,7 +1991,7 @@ function LabourForm({ sites, defaultSiteId = null, defaultContractor = null, onS
         </div>
       )}
       <div className="grid-responsive" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <Fld label="WORK TYPE" value={form.workType} onChange={e=>setForm({...form,workType:e.target.value})}/>
+        <AutocompleteFld label="WORK TYPE" value={form.workType} onChange={e=>setForm({...form,workType:e.target.value})} collectionType="work_type" />
         <Fld label="AMOUNT (₹)" type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:14}}>
